@@ -1,0 +1,74 @@
+[
+  {
+    "process": "Daily Production Report",
+    "department": "Operations",
+    "before_min": 120,
+    "after_min": 0.5,
+    "saved_per_task_min": 119.5,
+    "frequency_per_week": 5,
+    "saved_per_week_min": 597.5,
+    "saved_per_month_hours": 43.1,
+    "productivity_gain_pct": 99.6,
+    "cost_saved_per_month": 646.79
+  },
+  {
+    "process": "Quality Defect Analysis",
+    "department": "Quality",
+    "before_min": 90,
+    "after_min": 2,
+    "saved_per_task_min": 88,
+    "frequency_per_week": 5,
+    "saved_per_week_min": 440,
+    "saved_per_month_hours": 31.8,
+    "productivity_gain_pct": 97.8,
+    "cost_saved_per_month": 571.56
+  },
+  {
+    "process": "Inventory Reorder Check",
+    "department": "Warehouse",
+    "before_min": 60,
+    "after_min": 1,
+    "saved_per_task_min": 59,
+    "frequency_per_week": 3,
+    "saved_per_week_min": 177,
+    "saved_per_month_hours": 12.8,
+    "productivity_gain_pct": 98.3,
+    "cost_saved_per_month": 153.28
+  },
+  {
+    "process": "Machine Downtime Report",
+    "department": "Maintenance",
+    "before_min": 45,
+    "after_min": 0.5,
+    "saved_per_task_min": 44.5,
+    "frequency_per_week": 5,
+    "saved_per_week_min": 222.5,
+    "saved_per_month_hours": 16.1,
+    "productivity_gain_pct": 98.9,
+    "cost_saved_per_month": 321.14
+  },
+  {
+    "process": "Monthly KPI Dashboard",
+    "department": "Management",
+    "before_min": 240,
+    "after_min": 5,
+    "saved_per_task_min": 235,
+    "frequency_per_week": 4,
+    "saved_per_week_min": 940,
+    "saved_per_month_hours": 67.8,
+    "productivity_gain_pct": 97.9,
+    "cost_saved_per_month": 1695.92
+  },
+  {
+    "process": "Worker Productivity Report",
+    "department": "HR",
+    "before_min": 60,
+    "after_min": 1,
+    "saved_per_task_min": 59,
+    "frequency_per_week": 5,
+    "saved_per_week_min": 295,
+    "saved_per_month_hours": 21.3,
+    "productivity_gain_pct": 98.3,
+    "cost_saved_per_month": 319.34
+  }
+]
