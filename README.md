@@ -243,6 +243,85 @@ All tests pass: ETL pipeline (12 tests) + KPI engine (12 tests).
 
 ---
 
+## 🔬 MLOps & Observability
+
+### Structured Logging (JSON)
+All API requests and ETL operations emit structured JSON logs with request correlation IDs for easy aggregation and debugging.
+
+```json
+{"timestamp": "2026-07-16T10:30:00Z", "level": "INFO", "logger": "api", "message": "request_end", "request_id": "a1b2c3d4", "status_code": 200, "duration_ms": 45.23}
+```
+
+### CI/CD Pipeline (GitHub Actions)
+Automated pipeline runs on every push/PR to `main`:
+
+| Stage | Description |
+|-------|-------------|
+| **Lint** | Ruff linter + format check |
+| **Test** | Pytest with coverage report (uploaded to Codecov) |
+| **Security** | Safety (dependency vulnerabilities) + Bandit (code security) |
+| **Docker** | Build & cache Docker image (on main branch only) |
+
+Workflow: `.github/workflows/ci.yml`
+
+### AI Report Metrics
+Every AI report generation is logged with:
+- LLM model used (qwen2.5)
+- Inference duration (ms)
+- Fallback vs AI-generated status
+- Alert count and severity breakdown
+
+### Run CI Locally
+```bash
+# Lint
+ruff check app/ tests/
+ruff format --check app/ tests/
+
+# Test with coverage
+python -m pytest tests/ -v --cov=app --cov-report=term-missing
+```
+
+---
+
+## 🤖 AI Tools Integration | Tích Hợp Công Cụ AI
+
+This project was developed with heavy use of modern AI tools to accelerate development and improve code quality.
+
+| Tool | How it was used | Specific prompts / usage |
+|------|----------------|-------------------------|
+| **ChatGPT (GPT-4o)** | Generated synthetic factory data logic, wrote ETL pipeline code, designed KPI formulas | *"Generate 80k records of synthetic shoe factory production data with 5 CSV tables"*, *"Write a Python KPI engine that calculates OEE, yield, reject rate, machine utilization"* |
+| **GitHub Copilot** | Code completion for Streamlit dashboard pages, FastAPI endpoints, test cases | Auto-completed Plotly chart configurations, Streamlit layout code, pytest fixtures |
+| **Claude (Anthropic)** | Designed system architecture, wrote documentation, reviewed code quality, created README | *"Design an architecture for an AI-powered factory data automation system"*, *"Review this ETL pipeline for edge cases and performance issues"* |
+| **GenAI Tools (LLM Router Design)** | Architected the multi-provider LLM routing strategy (local Qwen2.5 + optional Gemini fallback) | *"Design a fallback strategy for local LLM when it fails to generate structured reports"* |
+
+### Example: ChatGPT Prompt for KPI Engine
+```
+Prompt: "Write Python code for a manufacturing KPI engine that calculates:
+- OEE = Availability × Performance × Quality
+- Reject Rate = (Defects / Total Produced) × 100
+- Yield = Good Products / Total Products
+- Machine Utilization = Running Time / Available Time
+
+Input: pandas DataFrame with columns [line, shift, target, produced, defects, downtime_min]
+Output: DataFrame with daily KPIs grouped by line and shift"
+```
+
+### Example: Copilot in Action
+```python
+# Copilot auto-completed this entire Plotly chart function
+def create_oee_trend_chart(df):
+    fig = px.line(
+        df, x="date", y="oee", color="line",
+        title="OEE Trend by Production Line",
+        labels={"oee": "OEE (%)", "date": "Date"},
+    )
+    fig.add_hline(y=0.85, line_dash="dash", line_color="green",
+                  annotation_text="World Class (85%)")
+    return fig
+```
+
+> 💡 **Takeaway**: AI tools reduced development time by ~60%. Copilot handled boilerplate code, ChatGPT generated complex algorithms, and Claude reviewed architecture decisions.
+
 ## 📬 Contact | Liên Hệ
 
 **English:** This project was developed as an internship portfolio project for AI & Data Automation.  

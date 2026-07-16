@@ -7,6 +7,9 @@ import numpy as np
 from typing import Dict, Optional
 from datetime import datetime, timedelta
 from app.utils.config import OEE_TARGET
+from app.utils.logging_config import get_logger, log_event
+
+logger = get_logger("kpi", "kpi_engine")
 
 
 def calculate_daily_production(prod_df: pd.DataFrame) -> pd.DataFrame:
@@ -23,9 +26,9 @@ def calculate_daily_production(prod_df: pd.DataFrame) -> pd.DataFrame:
         Total_Records=("Actual_Qty", "count")
     ).reset_index()
     
-    daily["Achievement_Rate_pct"] = round((daily["Total_Actual"] / daily["Total_Target"]) * 100, 2)
-    daily["Reject_Rate_pct"] = round((daily["Total_Reject"] / daily["Total_Actual"]) * 100, 2)
-    daily["Yield_pct"] = round((daily["Total_Good"] / daily["Total_Actual"]) * 100, 2)
+    daily["Achievement_Rate_pct"] = round((daily["Total_Actual"] / daily["Total_Target"].replace(0, 1)) * 100, 2)
+    daily["Reject_Rate_pct"] = round((daily["Total_Reject"] / daily["Total_Actual"].replace(0, 1)) * 100, 2)
+    daily["Yield_pct"] = round((daily["Total_Good"] / daily["Total_Actual"].replace(0, 1)) * 100, 2)
     daily["Date"] = pd.to_datetime(daily["Date"])
     
     return daily.sort_values("Date")
@@ -49,8 +52,8 @@ def calculate_weekly_production(prod_df: pd.DataFrame) -> pd.DataFrame:
         Avg_Cycle_Time=("Cycle_Time_sec", "mean")
     ).reset_index()
     
-    weekly["Achievement_Rate_pct"] = round((weekly["Total_Actual"] / weekly["Total_Target"]) * 100, 2)
-    weekly["Reject_Rate_pct"] = round((weekly["Total_Reject"] / weekly["Total_Actual"]) * 100, 2)
+    weekly["Achievement_Rate_pct"] = round((weekly["Total_Actual"] / weekly["Total_Target"].replace(0, 1)) * 100, 2)
+    weekly["Reject_Rate_pct"] = round((weekly["Total_Reject"] / weekly["Total_Actual"].replace(0, 1)) * 100, 2)
     
     return weekly
 
@@ -73,8 +76,8 @@ def calculate_monthly_production(prod_df: pd.DataFrame) -> pd.DataFrame:
         Avg_Cycle_Time=("Cycle_Time_sec", "mean")
     ).reset_index()
     
-    monthly["Achievement_Rate_pct"] = round((monthly["Total_Actual"] / monthly["Total_Target"]) * 100, 2)
-    monthly["Reject_Rate_pct"] = round((monthly["Total_Reject"] / monthly["Total_Actual"]) * 100, 2)
+    monthly["Achievement_Rate_pct"] = round((monthly["Total_Actual"] / monthly["Total_Target"].replace(0, 1)) * 100, 2)
+    monthly["Reject_Rate_pct"] = round((monthly["Total_Reject"] / monthly["Total_Actual"].replace(0, 1)) * 100, 2)
     
     return monthly
 
@@ -97,7 +100,7 @@ def calculate_oee(prod_df: pd.DataFrame, mach_df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index()
     availability["Availability_pct"] = round(
         ((availability["Total_Time"] * 10 - availability["Downtime_Total"]) / 
-         (availability["Total_Time"] * 10)) * 100, 2
+         (availability["Total_Time"] * 10).replace(0, 1)) * 100, 2
     )
     
     # Performance from production
@@ -109,7 +112,7 @@ def calculate_oee(prod_df: pd.DataFrame, mach_df: pd.DataFrame) -> pd.DataFrame:
         Total_Target=("Target_Qty", "sum")
     ).reset_index()
     performance["Performance_pct"] = round(
-        (performance["Total_Actual"] / performance["Total_Target"]) * 100, 2
+        (performance["Total_Actual"] / performance["Total_Target"].replace(0, 1)) * 100, 2
     )
     
     # Quality
@@ -118,7 +121,7 @@ def calculate_oee(prod_df: pd.DataFrame, mach_df: pd.DataFrame) -> pd.DataFrame:
         Total_Actual=("Actual_Qty", "sum")
     ).reset_index()
     quality["Quality_pct"] = round(
-        (quality["Total_Good"] / quality["Total_Actual"]) * 100, 2
+        (quality["Total_Good"] / quality["Total_Actual"].replace(0, 1)) * 100, 2
     )
     
     # Merge
@@ -154,7 +157,7 @@ def calculate_machine_utilization(mach_df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index()
     
     util["Total_Readings"] = util["Running_Count"] + util["Idle_Count"] + util["Maint_Count"] + util["Failure_Count"]
-    util["Utilization_pct"] = round((util["Running_Count"] / util["Total_Readings"]) * 100, 2)
+    util["Utilization_pct"] = round((util["Running_Count"] / util["Total_Readings"].replace(0, 1)) * 100, 2)
     
     return util.sort_values(["Date", "Machine_ID"])
 
@@ -226,7 +229,7 @@ def calculate_defect_analysis(qual_df: pd.DataFrame) -> dict:
         Occurrences=("Defect_Count", "count")
     ).reset_index()
     defect_by_type["Defect_Rate_pct"] = round(
-        (defect_by_type["Total_Defects"] / defect_by_type["Total_Inspected"]) * 100, 2
+        (defect_by_type["Total_Defects"] / defect_by_type["Total_Inspected"].replace(0, 1)) * 100, 2
     )
     
     # By severity
@@ -241,7 +244,7 @@ def calculate_defect_analysis(qual_df: pd.DataFrame) -> dict:
         Total_Inspected=("Inspected_Qty", "sum")
     ).reset_index()
     daily_defect["Defect_Rate_pct"] = round(
-        (daily_defect["Total_Defects"] / daily_defect["Total_Inspected"]) * 100, 2
+        (daily_defect["Total_Defects"] / daily_defect["Total_Inspected"].replace(0, 1)) * 100, 2
     )
     
     return {
@@ -261,35 +264,30 @@ def calculate_all_kpis(datasets: Dict[str, pd.DataFrame]) -> Dict:
     mach_df = datasets.get("machine")
     work_df = datasets.get("workers")
     
-    print("\n" + "="*60)
-    print("KPI Engine - Calculating Metrics")
-    print("="*60)
+    log_event(logger, "kpi_calculation_start", component="kpi_engine",
+              datasets_available=list(datasets.keys()))
     
     # Production KPIs
-    print("\nCalculating production KPIs...")
     kpis["daily_production"] = calculate_daily_production(prod_df)
     kpis["weekly_production"] = calculate_weekly_production(prod_df)
     kpis["monthly_production"] = calculate_monthly_production(prod_df)
     
     # OEE
-    print("Calculating OEE...")
     kpis["oee"] = calculate_oee(prod_df, mach_df)
     
     # Machine
-    print("Calculating machine utilization...")
     kpis["machine_utilization"] = calculate_machine_utilization(mach_df)
     
     # Workers
-    print("Calculating worker productivity...")
     kpis["worker_productivity"] = calculate_worker_productivity(work_df)
     
     # Inventory
-    print("Calculating inventory KPIs...")
     kpis["inventory_kpi"] = calculate_inventory_kpi(inv_df)
     
     # Quality
-    print("Calculating defect analysis...")
     kpis["defect_analysis"] = calculate_defect_analysis(qual_df)
     
-    print("\nKPI calculation complete!")
+    calculated = [k for k, v in kpis.items() if v is not None and (not hasattr(v, "empty") or not v.empty)]
+    log_event(logger, "kpi_calculation_complete", component="kpi_engine",
+              kpis_calculated=calculated)
     return kpis

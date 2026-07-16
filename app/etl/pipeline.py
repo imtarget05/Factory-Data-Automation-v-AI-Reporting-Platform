@@ -4,10 +4,14 @@ Auto-detects and loads CSV/Excel files from raw data directory.
 """
 import os
 import glob
+import logging
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 from app.utils.config import DATA_RAW_DIR, DATA_PROCESSED_DIR
+from app.utils.logging_config import get_logger, log_event
+
+logger = get_logger("etl", "pipeline")
 
 
 def discover_files(directory: Optional[str] = None) -> Dict[str, str]:
@@ -55,13 +59,15 @@ def load_file(filepath: str) -> Optional[pd.DataFrame]:
     try:
         if ext == ".csv":
             return pd.read_csv(filepath)
-        elif ext in [".xlsx", ".xls"]:
+        elif ext == ".xlsx":
             return pd.read_excel(filepath, engine="openpyxl")
+        elif ext == ".xls":
+            return pd.read_excel(filepath, engine="xlrd")
         else:
-            print(f"Unsupported file format: {ext}")
+            logger.warning(f"Unsupported file format: {ext}")
             return None
     except Exception as e:
-        print(f"Error loading {filepath}: {e}")
+        logger.error(f"Error loading {filepath}: {e}")
         return None
 
 
@@ -90,21 +96,21 @@ def clean_dataframe(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
             elif df[col].dtype == "object":
                 df[col] = df[col].fillna(f"Unknown_{col}")
             elif "datetime" in str(df[col].dtype):
-                df[col] = df[col].fillna(method="ffill")
+                df[col] = df[col].ffill()
     
     # Convert date columns to datetime
     date_cols = [col for col in df.columns if "date" in col.lower() or col == "Date"]
     for col in date_cols:
         try:
             df[col] = pd.to_datetime(df[col], errors="coerce")
-        except:
+        except Exception:
             pass
     
     # Standardize text columns (strip whitespace, uppercase first letters)
     for col in df.select_dtypes(include=["object"]).columns:
         try:
             df[col] = df[col].astype(str).str.strip()
-        except:
+        except Exception:
             pass
     
     # Remove negative quantities where not expected
@@ -113,7 +119,8 @@ def clean_dataframe(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].clip(lower=0)
     
-    print(f"  Cleaned {dataset_name}: {len(df)} rows")
+    log_event(logger, "data_cleaned", component="etl",
+              dataset=dataset_name, rows=len(df))
     return df
 
 
@@ -122,23 +129,25 @@ def load_and_clean_all(directory: Optional[str] = None) -> Dict[str, pd.DataFram
     files = discover_files(directory)
     
     if not files:
-        print(f"No data files found in {directory if directory else DATA_RAW_DIR}")
+        log_event(logger, "no_files_found", level=logging.WARNING, component="etl",
+                  directory=directory if directory else DATA_RAW_DIR)
         return {}
     
-    print(f"\n{'='*60}")
-    print(f"ETL Pipeline - Loading Data")
-    print(f"{'='*60}")
+    log_event(logger, "etl_start", component="etl", datasets_found=list(files.keys()))
     
     datasets = {}
     for dataset_name, filepath in sorted(files.items()):
-        print(f"\nLoading {dataset_name} from: {os.path.basename(filepath)}")
+        log_event(logger, "loading_dataset", component="etl",
+                  dataset=dataset_name, file=os.path.basename(filepath))
         df = load_file(filepath)
         if df is not None:
             df = clean_dataframe(df, dataset_name)
             datasets[dataset_name] = df
         else:
-            print(f"  FAILED to load {dataset_name}")
+            log_event(logger, "load_failed", level=logging.ERROR, component="etl",
+                      dataset=dataset_name)
     
+    log_event(logger, "etl_complete", component="etl", datasets_loaded=list(datasets.keys()))
     return datasets
 
 
@@ -153,9 +162,10 @@ def save_processed(datasets: Dict[str, pd.DataFrame], directory: Optional[str] =
     for name, df in datasets.items():
         filepath = os.path.join(directory, f"{name}_{timestamp}.parquet")
         df.to_parquet(filepath, index=False)
-        print(f"Saved processed {name}: {filepath}")
+        log_event(logger, "saved_processed", component="etl",
+                  dataset=name, filepath=os.path.basename(filepath))
     
-    print(f"\nAll processed data saved to: {directory}")
+    log_event(logger, "all_processed_saved", component="etl", directory=directory)
 
 
 def run_etl(directory: Optional[str] = None) -> Dict[str, pd.DataFrame]:

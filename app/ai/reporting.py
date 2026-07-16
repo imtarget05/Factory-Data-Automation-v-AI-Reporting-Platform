@@ -3,11 +3,16 @@ AI Reporting Module — powered by local Qwen2.5 via Ollama.
 Zero API costs, fully offline, runs entirely on your machine.
 """
 import json
+import time
+import logging
 import pandas as pd
 from typing import Dict, List, Optional
 from datetime import datetime
 from app.ai.local_llm import get_llm
 from app.utils.config import FACTORY_NAME
+from app.utils.logging_config import get_logger, log_event
+
+logger = get_logger("ai", "reporting")
 
 
 class AIReportGenerator:
@@ -83,9 +88,12 @@ class AIReportGenerator:
     
     def generate_report(self, kpis: Dict, alerts: List[Dict], datasets: Dict) -> Dict:
         """Generate AI report from KPIs and alerts using local Qwen."""
+        start = time.time()
         context = self._build_context(kpis, alerts, datasets)
         
         if self.llm.available:
+            log_event(logger, "llm_report_start", component="ai_reporting",
+                      llm_model="qwen2.5", alerts_count=len(alerts))
             prompt = f"""You are a Senior Manufacturing Operations Analyst. Analyze this factory data and provide a structured executive report.
 
 FACTORY DATA:
@@ -105,10 +113,18 @@ Respond ONLY with valid JSON. No markdown, no code blocks, no explanation."""
 
             system_prompt = "You are a manufacturing analyst. Always respond with valid JSON only."
             report = self.llm.generate_json(prompt, system_prompt)
+            elapsed_ms = round((time.time() - start) * 1000, 2)
             if report:
+                log_event(logger, "llm_report_success", component="ai_reporting",
+                          duration_ms=elapsed_ms, report_keys=list(report.keys()))
                 return report
+            log_event(logger, "llm_report_fallback", level=logging.WARNING, component="ai_reporting",
+                      duration_ms=elapsed_ms, reason="llm_returned_none")
         
         # Fallback: generate a data-driven mock report
+        elapsed_ms = round((time.time() - start) * 1000, 2)
+        log_event(logger, "data_driven_report", component="ai_reporting",
+                  duration_ms=elapsed_ms)
         return self._generate_data_driven_report(kpis, alerts)
     
     def _generate_data_driven_report(self, kpis: Dict, alerts: List[Dict]) -> Dict:
@@ -252,7 +268,7 @@ Provide a clear, concise answer. If the data doesn't contain enough information,
         
         if "downtime" in query_lower or "machine" in query_lower:
             mach_util = context.get("kpis", {}).get("machine_utilization")
-            if mach_util is not None and not mach_util.empty:
+            if isinstance(mach_util, pd.DataFrame) and not mach_util.empty:
                 latest = mach_util[mach_util["Date"] == mach_util["Date"].max()]
                 if not latest.empty:
                     worst = latest.loc[latest["Total_Downtime"].idxmax()]
@@ -264,7 +280,7 @@ Provide a clear, concise answer. If the data doesn't contain enough information,
         
         if "production" in query_lower or "line" in query_lower:
             daily_prod = context.get("kpis", {}).get("daily_production")
-            if daily_prod is not None and not daily_prod.empty:
+            if isinstance(daily_prod, pd.DataFrame) and not daily_prod.empty:
                 latest = daily_prod.iloc[-1]
                 return (f"Latest production: {latest['Total_Actual']:,.0f} units "
                        f"(target: {latest['Total_Target']:,.0f}, "
@@ -274,8 +290,13 @@ Provide a clear, concise answer. If the data doesn't contain enough information,
         
         if "reject" in query_lower or "defect" in query_lower or "quality" in query_lower:
             defect = context.get("kpis", {}).get("defect_analysis", {})
-            by_type = defect.get("by_type") if isinstance(defect, dict) else None
-            if by_type is not None and not by_type.empty:
+            if isinstance(defect, dict):
+                by_type = defect.get("by_type")
+            elif isinstance(defect, pd.DataFrame):
+                by_type = defect
+            else:
+                by_type = None
+            if isinstance(by_type, pd.DataFrame) and not by_type.empty:
                 top = by_type.iloc[0]
                 return (f"Top defect type: '{top['Defect_Type']}' with {top['Total_Defects']} defects "
                        f"({top['Defect_Rate_pct']:.2f}% rate). "
@@ -284,7 +305,7 @@ Provide a clear, concise answer. If the data doesn't contain enough information,
         
         if "inventory" in query_lower or "stock" in query_lower:
             inv_kpi = context.get("kpis", {}).get("inventory_kpi")
-            if inv_kpi is not None and not inv_kpi.empty:
+            if isinstance(inv_kpi, pd.DataFrame) and not inv_kpi.empty:
                 latest = inv_kpi.iloc[-1]
                 return (f"Total inventory: {latest['Total_Stock']:,.0f} units "
                        f"(value: ${latest['Stock_Value']:,.2f}, "

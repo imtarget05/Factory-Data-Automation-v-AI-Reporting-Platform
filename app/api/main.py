@@ -4,8 +4,11 @@ Provides REST API endpoints for data access and report generation.
 """
 import os
 import sys
+import uuid
+import time
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from typing import Dict, List, Optional
@@ -18,12 +21,22 @@ from app.etl.kpi_engine import calculate_all_kpis
 from app.reports.alert_system import AlertManager
 from app.reports.exporter import ReportExporter
 from app.ai.reporting import AIReportGenerator
+from app.ai.marketing import MarketingGenerator
 from app.utils.config import DATA_EXPORTS_DIR
+from app.utils.logging_config import get_logger, log_event
+
+logger = get_logger("api", "backend")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    refresh_data()
+    yield
 
 app = FastAPI(
     title="Smart Manufacturing Platform API",
     description="REST API for factory data automation and AI reporting",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -33,6 +46,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log every HTTP request with correlation ID and latency for MLOps observability."""
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4())[:8])
+    start = time.time()
+    logger.info(f"request_start", extra={
+        "component": "api",
+        "request_id": request_id,
+        "method": request.method,
+        "path": request.url.path
+    })
+    response = await call_next(request)
+    duration_ms = round((time.time() - start) * 1000, 2)
+    logger.info(f"request_end", extra={
+        "component": "api",
+        "request_id": request_id,
+        "status_code": response.status_code,
+        "duration_ms": duration_ms
+    })
+    response.headers["X-Request-ID"] = request_id
+    return response
+
 
 # Global cache
 _datasets = None
@@ -49,11 +86,6 @@ def refresh_data():
         alert_mgr = AlertManager()
         _alerts = alert_mgr.check_all(_datasets, _kpis)
     return _datasets is not None
-
-
-@app.on_event("startup")
-async def startup():
-    refresh_data()
 
 
 @app.get("/")
@@ -165,7 +197,7 @@ async def generate_report():
 
 
 @app.get("/api/v1/export")
-async def export_report(format: str = Query("excel", regex="^(excel|pdf|all)$")):
+async def export_report(format: str = Query("excel", pattern="^(excel|pdf|all)$")):
     """Export report to Excel or PDF."""
     if _datasets is None or _kpis is None:
         if not refresh_data():
@@ -212,6 +244,17 @@ async def refresh():
         "success": success,
         "message": "Data refreshed successfully" if success else "No data found"
     }
+
+
+@app.get("/api/v1/marketing")
+async def generate_marketing(
+    product_name: str = Query("Giày thể thao cao cấp", description="Tên sản phẩm"),
+    product_info: str = Query("", description="Thông tin thêm về sản phẩm"),
+):
+    """Generate AI marketing content (Facebook post, email, product description)."""
+    gen = MarketingGenerator()
+    result = gen.generate_all(product_name, product_info)
+    return result
 
 
 @app.get("/api/v1/chat")

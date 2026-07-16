@@ -141,7 +141,10 @@ class ReportExporter:
             prod_data = kpis["daily_production"].tail(7).round(1)
             prod_table = [list(prod_data.columns)] + prod_data.values.tolist()
             
-            t = Table(prod_table, colWidths=[70] * len(prod_data.columns))
+            available_width = 495
+            num_cols = len(prod_data.columns)
+            col_width = min(70, available_width // max(num_cols, 1))
+            t = Table(prod_table, colWidths=[col_width] * num_cols)
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#283593")),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),

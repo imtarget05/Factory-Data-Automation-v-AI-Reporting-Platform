@@ -3,12 +3,16 @@ Alert System for manufacturing monitoring.
 Generates warnings and alerts based on defined thresholds.
 """
 import pandas as pd
+import logging
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from app.utils.config import (
     ALERT_REJECT_RATE, ALERT_INVENTORY_MIN, ALERT_DOWNTIME_MIN,
     OEE_TARGET
 )
+from app.utils.logging_config import get_logger, log_event
+
+logger = get_logger("alerts", "alert_system")
 
 
 class Alert:
@@ -143,7 +147,7 @@ class AlertManager:
         
         # High temperature or vibration
         high_temp = latest[
-            (latest["Temperature_C"] > 90) & 
+            (latest["Temperature_C"] > 85) & 
             (latest["Status"] == "Running")
         ]
         for _, row in high_temp.iterrows():
@@ -152,7 +156,7 @@ class AlertManager:
                 category="Machine",
                 message=f"Machine {row['Machine_ID']} high temperature: {row['Temperature_C']:.1f}°C",
                 value=row["Temperature_C"],
-                threshold=90,
+                threshold=85,
                 source=f"Machine_{row['Machine_ID']}"
             ))
         
@@ -209,9 +213,10 @@ class AlertManager:
         level_order = {"CRITICAL": 0, "WARNING": 1, "INFO": 2}
         self.alerts.sort(key=lambda a: (level_order.get(a.level, 99), a.timestamp))
         
-        print(f"\nAlert System: {len(self.alerts)} alerts generated")
-        for a in self.alerts:
-            print(f"  [{a.level}] {a.category}: {a.message}")
+        critical = sum(1 for a in self.alerts if a.level == "CRITICAL")
+        warnings = sum(1 for a in self.alerts if a.level == "WARNING")
+        log_event(logger, "alert_check_complete", component="alert_system",
+                  total=len(self.alerts), critical=critical, warnings=warnings)
         
         return self.alerts
     
