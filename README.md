@@ -80,15 +80,15 @@ Export PDF / Excel + Email Alerts
 
 ## 📊 Dataset | Dữ Liệu
 
-**80,385 synthetic records** simulating 90 days of factory operations:
+**26,119 synthetic records** simulating 90 days of factory operations (as produced by `python -m scripts.generate_sample_data`, seed 42):
 
 | Dataset | Records | Description |
 |---------|---------|-------------|
-| `production.csv` | 45,000 | Daily production by line, shift, product |
-| `quality.csv` | 9,000 | Quality inspections, defect types, severity |
-| `inventory.csv` | 900 | Stock levels, incoming/outgoing, reorder points |
-| `machine.csv` | 18,000 | Machine status, temperature, vibration, downtime |
-| `workers.csv` | 7,485 | Worker productivity, hours, defects caused |
+| `production.csv` | 11,271 | Daily production by line, shift, product |
+| `quality.csv` | 3,636 | Quality inspections, defect types, severity |
+| `inventory.csv` | 909 | Stock levels, incoming/outgoing, reorder points |
+| `machine.csv` | 5,454 | Machine status, temperature, vibration, downtime |
+| `workers.csv` | 4,849 | Worker productivity, hours, defects caused |
 
 ---
 
@@ -112,7 +112,11 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Start Ollama (for local AI)
+# 4. Generate the deterministic sample data (REQUIRED on a fresh clone:
+#    data/raw/*.csv is gitignored, so a new clone contains no input data)
+python -m scripts.generate_sample_data
+
+# 5. Start Ollama (for local AI)
 brew services start ollama
 ollama pull qwen2.5:3b  # First time only (1.9GB)
 ```
@@ -128,7 +132,7 @@ Open **http://localhost:8501** in your browser.
 
 ### Steps | Các Bước
 
-1. Click **"Generate Sample Data"** in the sidebar (or data is already generated)
+1. Run `python -m scripts.generate_sample_data` once after cloning, or click **"Generate Sample Data"** in the sidebar. `data/raw/*.csv` is gitignored, so a fresh clone has no data until you do this.
 2. Click **"Load / Refresh Data"**
 3. Explore the **9 dashboard pages**
 4. Click **"Generate New Report"** for AI executive summary
@@ -148,6 +152,9 @@ API docs at **http://localhost:8000/docs**
 ```bash
 python -m pytest tests/ -v
 ```
+
+Expected: `24 passed`. If `data/raw/` is empty, `tests/conftest.py` generates the
+sample data automatically first, so this command works on a bare clone too.
 
 ---
 

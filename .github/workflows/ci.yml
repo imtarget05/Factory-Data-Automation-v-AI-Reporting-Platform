@@ -46,6 +46,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pytest pytest-cov
 
+      # data/raw/*.csv is gitignored, so a fresh CI checkout has no input data.
+      # Generate it explicitly here so CI and a local clone run the exact same
+      # sequence. tests/conftest.py keeps an autouse guard for anyone who runs
+      # pytest directly without this step.
+      - name: Generate deterministic sample data
+        run: python -m scripts.generate_sample_data
+
       - name: Run tests with coverage
         run: |
           python -m pytest tests/ -v \
