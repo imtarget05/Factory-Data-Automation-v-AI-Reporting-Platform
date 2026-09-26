@@ -5,7 +5,6 @@ and product descriptions using local Qwen2.5 LLM.
 
 import json
 import logging
-from typing import Dict, List, Optional
 
 from app.ai.local_llm import LocalLLM
 
@@ -63,53 +62,50 @@ class MarketingGenerator:
     def __init__(self):
         self._llm = LocalLLM()
 
-    def generate_facebook_post(
-        self, product_name: str, product_info: str = ""
-    ) -> Dict:
+    def generate_facebook_post(self, product_name: str, product_info: str = "") -> dict:
         """Generate a Facebook post for a product."""
-        prompt = FACEBOOK_POST_TEMPLATE.format(
-            product_name=product_name, product_info=product_info
-        )
+        prompt = FACEBOOK_POST_TEMPLATE.format(product_name=product_name, product_info=product_info)
         raw = self._llm.generate(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.8)
-        return self._parse_json(raw, {
-            "title": product_name,
-            "content": raw,
-            "hashtags": ["#giaythethao", "#sanxuatvietnam"],
-            "cta": "Liên hệ ngay để biết thêm chi tiết!",
-        })
+        return self._parse_json(
+            raw,
+            {
+                "title": product_name,
+                "content": raw,
+                "hashtags": ["#giaythethao", "#sanxuatvietnam"],
+                "cta": "Liên hệ ngay để biết thêm chi tiết!",
+            },
+        )
 
-    def generate_email(
-        self, product_name: str, product_info: str = ""
-    ) -> Dict:
+    def generate_email(self, product_name: str, product_info: str = "") -> dict:
         """Generate an email campaign for a product."""
-        prompt = EMAIL_TEMPLATE.format(
-            product_name=product_name, product_info=product_info
-        )
+        prompt = EMAIL_TEMPLATE.format(product_name=product_name, product_info=product_info)
         raw = self._llm.generate(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.7)
-        return self._parse_json(raw, {
-            "subject": f"Giới thiệu sản phẩm mới: {product_name}",
-            "body": raw,
-            "cta_button": "Xem sản phẩm",
-            "signature": "Đội ngũ Marketing - Smart Factory Alpha",
-        })
-
-    def generate_product_description(
-        self, product_name: str, product_info: str = ""
-    ) -> Dict:
-        """Generate a product description for e-commerce."""
-        prompt = PRODUCT_DESC_TEMPLATE.format(
-            product_name=product_name, product_info=product_info
+        return self._parse_json(
+            raw,
+            {
+                "subject": f"Giới thiệu sản phẩm mới: {product_name}",
+                "body": raw,
+                "cta_button": "Xem sản phẩm",
+                "signature": "Đội ngũ Marketing - Smart Factory Alpha",
+            },
         )
-        raw = self._llm.generate(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.5)
-        return self._parse_json(raw, {
-            "name": product_name,
-            "short_description": f"Sản phẩm {product_name} chất lượng cao",
-            "features": ["Chất liệu cao cấp", "Thiết kế hiện đại"],
-            "care_instructions": "Bảo quản nơi khô ráo",
-            "estimated_price": "Liên hệ",
-        })
 
-    def generate_all(self, product_name: str, product_info: str = "") -> Dict:
+    def generate_product_description(self, product_name: str, product_info: str = "") -> dict:
+        """Generate a product description for e-commerce."""
+        prompt = PRODUCT_DESC_TEMPLATE.format(product_name=product_name, product_info=product_info)
+        raw = self._llm.generate(prompt, system_prompt=SYSTEM_PROMPT, temperature=0.5)
+        return self._parse_json(
+            raw,
+            {
+                "name": product_name,
+                "short_description": f"Sản phẩm {product_name} chất lượng cao",
+                "features": ["Chất liệu cao cấp", "Thiết kế hiện đại"],
+                "care_instructions": "Bảo quản nơi khô ráo",
+                "estimated_price": "Liên hệ",
+            },
+        )
+
+    def generate_all(self, product_name: str, product_info: str = "") -> dict:
         """Generate all marketing content for a product."""
         return {
             "product_name": product_name,
@@ -118,7 +114,7 @@ class MarketingGenerator:
             "product_description": self.generate_product_description(product_name, product_info),
         }
 
-    def _parse_json(self, raw: str, fallback: Dict) -> Dict:
+    def _parse_json(self, raw: str, fallback: dict) -> dict:
         """Try to parse JSON from LLM output, return fallback on failure."""
         try:
             # Try to find JSON in the response
@@ -134,9 +130,8 @@ class MarketingGenerator:
 
 # ---- Convenience function ----
 
-def generate_marketing_content(
-    product_name: str, product_info: str = ""
-) -> Dict:
+
+def generate_marketing_content(product_name: str, product_info: str = "") -> dict:
     """Generate all marketing content for a product (convenience wrapper)."""
     gen = MarketingGenerator()
     return gen.generate_all(product_name, product_info)

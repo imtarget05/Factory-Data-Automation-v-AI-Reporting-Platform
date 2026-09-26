@@ -1,5 +1,7 @@
 """Configuration settings for the Smart Manufacturing Platform."""
+
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -18,7 +20,9 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
 # Database
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'data', 'manufacturing.db')}")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'data', 'manufacturing.db')}"
+)
 
 # Factory defaults
 FACTORY_NAME = "Smart Factory Alpha"
@@ -26,8 +30,16 @@ DEFAULT_SHIFTS = ["Morning", "Afternoon", "Night"]
 PRODUCTION_LINES = [f"Line_{i}" for i in range(1, 11)]
 MACHINES = [f"M-{i:02d}" for i in range(1, 21)]
 PRODUCTS = [
-    "Running Shoe A1", "Running Shoe A2", "Casual B1", "Casual B2",
-    "Formal C1", "Sport D1", "Boot E1", "Sandal F1", "Slipper G1", "Loafers H1"
+    "Running Shoe A1",
+    "Running Shoe A2",
+    "Casual B1",
+    "Casual B2",
+    "Formal C1",
+    "Sport D1",
+    "Boot E1",
+    "Sandal F1",
+    "Slipper G1",
+    "Loafers H1",
 ]
 WORKERS = [f"EMP_{i:04d}" for i in range(1, 201)]
 

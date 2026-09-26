@@ -1,13 +1,13 @@
 """Tests for ETL Pipeline."""
+
 import os
 import sys
-import pytest
+
 import pandas as pd
-import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.etl.pipeline import discover_files, load_file, clean_dataframe, run_etl
+from app.etl.pipeline import clean_dataframe, discover_files, load_file, run_etl
 from app.utils.config import DATA_RAW_DIR
 
 
@@ -15,12 +15,12 @@ class TestDiscoverFiles:
     def test_discover_returns_dict(self):
         files = discover_files()
         assert isinstance(files, dict)
-    
+
     def test_discover_finds_csv(self):
         files = discover_files()
         csv_files = [f for f in files.values() if f.endswith(".csv")]
         assert len(csv_files) > 0, "No CSV files found"
-    
+
     def test_discover_has_expected_keys(self):
         files = discover_files()
         expected = {"production", "quality", "inventory", "machine", "workers"}
@@ -35,11 +35,11 @@ class TestLoadFile:
             df = load_file(csv_path)
             assert df is not None
             assert len(df) > 0
-    
+
     def test_load_nonexistent(self):
         df = load_file("/nonexistent/file.csv")
         assert df is None
-    
+
     def test_load_unsupported(self):
         df = load_file("test.txt")
         assert df is None
@@ -47,29 +47,33 @@ class TestLoadFile:
 
 class TestCleanDataFrame:
     def test_clean_production(self):
-        df = pd.DataFrame({
-            "Date": ["2026-01-01", "2026-01-01", None],
-            "Target_Qty": [100, 200, -1],
-            "Actual_Qty": [95, None, 180],
-            "Good_Qty": [90, 190, 175],
-            "Reject_Qty": [5, 10, 5],
-        })
+        df = pd.DataFrame(
+            {
+                "Date": ["2026-01-01", "2026-01-01", None],
+                "Target_Qty": [100, 200, -1],
+                "Actual_Qty": [95, None, 180],
+                "Good_Qty": [90, 190, 175],
+                "Reject_Qty": [5, 10, 5],
+            }
+        )
         cleaned = clean_dataframe(df, "production")
         assert cleaned is not None
         assert cleaned["Target_Qty"].min() >= 0  # Negative clipped
         assert cleaned["Actual_Qty"].notna().all()  # Missing filled
         assert len(cleaned) == 3  # No dupes removed
-    
+
     def test_clean_removes_duplicates(self):
-        df = pd.DataFrame({
-            "Date": ["2026-01-01", "2026-01-01"],
-            "Machine_ID": ["M-01", "M-01"],
-            "Value": [100, 100],
-        })
+        df = pd.DataFrame(
+            {
+                "Date": ["2026-01-01", "2026-01-01"],
+                "Machine_ID": ["M-01", "M-01"],
+                "Value": [100, 100],
+            }
+        )
         cleaned = clean_dataframe(df, "test")
         # Should have removed or kept valid rows
         assert cleaned is not None
-    
+
     def test_clean_handles_empty(self):
         df = pd.DataFrame()
         cleaned = clean_dataframe(df, "empty")
@@ -81,13 +85,13 @@ class TestRunETL:
     def test_run_etl_returns_dict(self):
         datasets = run_etl()
         assert isinstance(datasets, dict)
-    
+
     def test_run_etl_has_data(self):
         datasets = run_etl()
         if datasets:
             total = sum(len(df) for df in datasets.values())
             assert total > 0, "No data loaded"
-    
+
     def test_run_etl_columns(self):
         datasets = run_etl()
         if "production" in datasets:

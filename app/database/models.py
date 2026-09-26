@@ -1,10 +1,13 @@
 """
 Database models for the Smart Manufacturing Platform.
 """
-from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, Text, JSON
+
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Float, Integer, String, Text, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from datetime import datetime
+
 from app.utils.config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL, echo=False)
@@ -14,7 +17,7 @@ Base = declarative_base()
 
 class ProductionRecord(Base):
     __tablename__ = "production_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     Date = Column(DateTime)
     Line = Column(String)
@@ -32,7 +35,7 @@ class ProductionRecord(Base):
 
 class QualityRecord(Base):
     __tablename__ = "quality_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     Date = Column(DateTime)
     Product = Column(String)
@@ -47,7 +50,7 @@ class QualityRecord(Base):
 
 class InventoryRecord(Base):
     __tablename__ = "inventory_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     Date = Column(DateTime)
     Product = Column(String)
@@ -63,7 +66,7 @@ class InventoryRecord(Base):
 
 class MachineRecord(Base):
     __tablename__ = "machine_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     Date = Column(DateTime)
     Machine_ID = Column(String)
@@ -79,7 +82,7 @@ class MachineRecord(Base):
 
 class WorkerRecord(Base):
     __tablename__ = "worker_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     Date = Column(DateTime)
     Worker_ID = Column(String)
@@ -95,7 +98,7 @@ class WorkerRecord(Base):
 
 class AlertRecord(Base):
     __tablename__ = "alert_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     Level = Column(String)
     Category = Column(String)
@@ -109,7 +112,7 @@ class AlertRecord(Base):
 
 class KPIHistory(Base):
     __tablename__ = "kpi_history"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     Date = Column(DateTime)
     KPI_Name = Column(String)

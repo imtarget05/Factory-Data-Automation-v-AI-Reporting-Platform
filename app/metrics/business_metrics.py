@@ -2,11 +2,12 @@
 Business Metrics Measurement — Before/After AI Automation.
 Tracks time saved, productivity gain, cost reduction across business processes.
 """
+
 import json
 import os
-from datetime import datetime, timezone
-from typing import Dict, List, Optional
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
+from datetime import datetime
+
 from app.utils.logging_config import get_logger, log_event
 
 logger = get_logger("metrics", "business")
@@ -44,7 +45,7 @@ class ProcessMetric:
     def cost_saved_per_month(self) -> float:
         return round((self.time_saved_per_month / 60) * self.cost_per_hour, 2)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "process": self.process_name,
             "department": self.department,
@@ -65,16 +66,16 @@ class AIMetricsSummary:
     total_time_saved_monthly_hours: float = 0.0
     total_cost_saved_monthly: float = 0.0
     avg_productivity_gain_pct: float = 0.0
-    processes: List[Dict] = field(default_factory=list)
+    processes: list[dict] = field(default_factory=list)
 
 
 METRICS_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "business_metrics.json")
 
 
-def load_metrics() -> List[ProcessMetric]:
+def load_metrics() -> list[ProcessMetric]:
     if not os.path.exists(METRICS_FILE):
         return []
-    with open(METRICS_FILE, "r") as f:
+    with open(METRICS_FILE) as f:
         data = json.load(f)
     result = []
     for item in data:
@@ -87,18 +88,20 @@ def load_metrics() -> List[ProcessMetric]:
             cost_per_hour = round((cost_saved / saved_month) * 60, 2) if saved_month > 0 else 0
         else:
             cost_per_hour = 0
-        result.append(ProcessMetric(
-            process_name=item["process"],
-            department=item["department"],
-            before_minutes=before,
-            after_minutes=after,
-            frequency_per_week=freq,
-            cost_per_hour=cost_per_hour,
-        ))
+        result.append(
+            ProcessMetric(
+                process_name=item["process"],
+                department=item["department"],
+                before_minutes=before,
+                after_minutes=after,
+                frequency_per_week=freq,
+                cost_per_hour=cost_per_hour,
+            )
+        )
     return result
 
 
-def save_metrics(metrics: List[ProcessMetric]):
+def save_metrics(metrics: list[ProcessMetric]):
     os.makedirs(os.path.dirname(METRICS_FILE), exist_ok=True)
     with open(METRICS_FILE, "w") as f:
         json.dump([m.to_dict() for m in metrics], f, indent=2)
@@ -111,8 +114,13 @@ def add_process_metric(metric: ProcessMetric):
         metrics.remove(existing[0])
     metrics.append(metric)
     save_metrics(metrics)
-    log_event(logger, "metric_added", component="business_metrics",
-              process=metric.process_name, saved_pct=metric.productivity_gain_pct)
+    log_event(
+        logger,
+        "metric_added",
+        component="business_metrics",
+        process=metric.process_name,
+        saved_pct=metric.productivity_gain_pct,
+    )
 
 
 def get_summary() -> AIMetricsSummary:
@@ -195,8 +203,12 @@ def init_default_metrics():
     existing = load_metrics()
     if not existing:
         save_metrics(DEFAULT_PROCESSES)
-        log_event(logger, "default_metrics_initialized", component="business_metrics",
-                  count=len(DEFAULT_PROCESSES))
+        log_event(
+            logger,
+            "default_metrics_initialized",
+            component="business_metrics",
+            count=len(DEFAULT_PROCESSES),
+        )
 
 
 def print_report():
@@ -210,8 +222,10 @@ def print_report():
     print("-" * 65)
 
     for p in summary.processes:
-        print(f"{p['process']:<30} {p['before_min']:>6.0f}m {p['after_min']:>6.1f}m "
-              f"{p['productivity_gain_pct']:>6.1f}% {p['saved_per_month_hours']:>6.1f}h")
+        print(
+            f"{p['process']:<30} {p['before_min']:>6.0f}m {p['after_min']:>6.1f}m "
+            f"{p['productivity_gain_pct']:>6.1f}% {p['saved_per_month_hours']:>6.1f}h"
+        )
 
     print("-" * 65)
     print(f"\n  Total processes automated:  {summary.total_processes}")

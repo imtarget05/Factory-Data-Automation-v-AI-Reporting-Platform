@@ -2,19 +2,20 @@
 Structured logging configuration for MLOps observability.
 Logs are emitted in JSON format with request correlation for easy aggregation.
 """
+
 import json
 import logging
-import sys
 import os
+import sys
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Any
 
 
 class JsonFormatter(logging.Formatter):
     """Format log records as JSON with structured fields."""
 
     def format(self, record: logging.LogRecord) -> str:
-        log_entry: Dict[str, Any] = {
+        log_entry: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
@@ -44,7 +45,9 @@ def get_logger(name: str = "factory_platform", component: str = "app") -> loggin
     return adapter
 
 
-def log_event(logger: logging.LoggerAdapter, event: str, level: int = logging.INFO, **kwargs) -> None:
+def log_event(
+    logger: logging.LoggerAdapter, event: str, level: int = logging.INFO, **kwargs
+) -> None:
     """Helper to log a structured event with extra fields."""
     extra = {"component": kwargs.pop("component", "app")}
     logger.log(level, f"{event}", extra=extra)

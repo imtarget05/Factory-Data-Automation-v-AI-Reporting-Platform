@@ -7,6 +7,7 @@ deterministic generator once per session, and only when the data is actually
 missing, so it never slows down or changes the behaviour of an already-seeded
 run.
 """
+
 import glob
 import os
 import sys
@@ -32,5 +33,7 @@ def sample_data():
 
         print("\n[conftest] data/raw is empty - generating sample data (seed 42)")
         generate(quiet=True)
-        print(f"[conftest] generated: {len(glob.glob(os.path.join(DATA_RAW_DIR, '*.csv')))} CSV files")
+        print(
+            f"[conftest] generated: {len(glob.glob(os.path.join(DATA_RAW_DIR, '*.csv')))} CSV files"
+        )
     yield DATA_RAW_DIR

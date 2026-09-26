@@ -2,15 +2,16 @@
 Local LLM interface using Ollama + Qwen2.5.
 Zero API costs — runs entirely on your machine.
 """
+
 import json
+from typing import Optional
+
 import httpx
-from typing import Dict, List, Optional
-from datetime import datetime
 
 
 class LocalLLM:
     """Interface to local Ollama server running Qwen2.5."""
-    
+
     def __init__(self, model: str = "qwen2.5:3b", base_url: str = "http://localhost:11434"):
         self.model = model
         self.base_url = base_url
@@ -18,7 +19,7 @@ class LocalLLM:
         self.chat_url = f"{base_url}/api/chat"
         self._available = False
         self._check_connection()
-    
+
     def _check_connection(self):
         """Check if Ollama is running and model is available."""
         try:
@@ -35,31 +36,33 @@ class LocalLLM:
         except Exception as e:
             print(f"⚠️  Cannot connect to Ollama: {e}")
             print("   Start it: brew services start ollama")
-    
+
     @property
     def available(self) -> bool:
         return self._available
-    
-    def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                 temperature: float = 0.3, max_tokens: int = 2048) -> str:
+
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.3,
+        max_tokens: int = 2048,
+    ) -> str:
         """Generate text from the local model."""
         if not self._available:
             return ""
-        
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
-        
+
         try:
             payload = {
                 "model": self.model,
                 "messages": messages,
                 "stream": False,
-                "options": {
-                    "temperature": temperature,
-                    "num_predict": max_tokens
-                }
+                "options": {"temperature": temperature, "num_predict": max_tokens},
             }
             r = httpx.post(self.chat_url, json=payload, timeout=120)
             if r.status_code == 200:
@@ -70,15 +73,15 @@ class LocalLLM:
         except Exception as e:
             print(f"Ollama request failed: {e}")
             return ""
-    
-    def generate_json(self, prompt: str, system_prompt: Optional[str] = None) -> Optional[Dict]:
+
+    def generate_json(self, prompt: str, system_prompt: Optional[str] = None) -> Optional[dict]:
         """Generate and parse JSON response."""
         full_prompt = prompt + "\n\nRespond ONLY with valid JSON. No markdown, no code blocks."
         response = self.generate(full_prompt, system_prompt, temperature=0.1)
-        
+
         if not response:
             return None
-        
+
         # Extract JSON from response
         try:
             start = response.find("{")
