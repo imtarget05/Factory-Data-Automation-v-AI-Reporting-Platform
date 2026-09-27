@@ -3,7 +3,10 @@
 import os
 import sys
 
-import pandas as pd
+import pytest
+
+pandas = pytest.importorskip("pandas", reason="pandas required (CI installs requirements.txt)")
+pd = pandas
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -79,6 +82,41 @@ class TestCleanDataFrame:
         cleaned = clean_dataframe(df, "empty")
         assert cleaned is not None
         assert len(cleaned) == 0
+
+
+class TestNumericCoercion:
+    """Regression: blank cells must not poison measure columns to str dtype
+    (startup crash: groupby().mean() on str -> TypeError, lifespan exit)."""
+
+    def test_blank_cycle_time_stays_numeric(self):
+        df = pd.DataFrame(
+            {
+                "Date": ["2026-01-05", "2026-01-05"],
+                "Target_Qty": [400, 420],
+                "Actual_Qty": [390, 410],
+                "Good_Qty": [385, 405],
+                "Reject_Qty": [5, 5],
+                "Cycle_Time_sec": ["45.2", ""],
+            }
+        )
+        cleaned = clean_dataframe(df, "production")
+        assert pd.api.types.is_numeric_dtype(cleaned["Cycle_Time_sec"])
+        assert float(cleaned["Cycle_Time_sec"].mean()) > 0
+
+    def test_text_in_qty_becomes_nan_then_filled(self):
+        df = pd.DataFrame(
+            {
+                "Date": ["2026-01-05", "2026-01-05"],
+                "Target_Qty": ["400", "N/A"],
+                "Actual_Qty": [390, 410],
+                "Good_Qty": [385, 405],
+                "Reject_Qty": [5, 5],
+            }
+        )
+        cleaned = clean_dataframe(df, "production")
+        assert pd.api.types.is_numeric_dtype(cleaned["Target_Qty"])
+        assert cleaned["Target_Qty"].notna().all()
+        assert (cleaned["Target_Qty"] >= 0).all()
 
 
 class TestRunETL:

@@ -1,0 +1,7 @@
+services:
+  api:
+    ports: !override
+      - "8002:8000"
+  dashboard:
+    ports: !override
+      - "8503:8501"

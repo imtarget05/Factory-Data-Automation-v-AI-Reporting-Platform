@@ -52,6 +52,19 @@ app.add_middleware(
 )
 
 
+# --- Minimal Prometheus helper (additive; zero new dependencies) ----------------
+# In-memory request counters + process start time for GET /metrics below.
+# Unauthenticated (standard for Prometheus scraping). Does not alter any
+# existing route, auth, or response shape.
+_METRICS_START_TIME = time.time()
+_http_requests_total: dict = {}
+
+
+def _bump_http_counter(route: str, status: int) -> None:
+    key = (route, str(status))
+    _http_requests_total[key] = _http_requests_total.get(key, 0) + 1
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log every HTTP request with correlation ID and latency for MLOps observability."""
@@ -68,6 +81,7 @@ async def log_requests(request: Request, call_next):
     )
     response = await call_next(request)
     duration_ms = round((time.time() - start) * 1000, 2)
+    _bump_http_counter(request.url.path, response.status_code)
     logger.info(
         "request_end",
         extra={
@@ -121,6 +135,39 @@ async def health():
         "timestamp": datetime.now().isoformat(),
         "data_loaded": _datasets is not None,
     }
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus text exposition (aggregate KPI gauges, no raw dataset rows)."""
+    from fastapi.responses import PlainTextResponse
+
+    up = 1 if _datasets is not None else 0
+    n_alerts = len(_alerts) if _alerts else 0
+    out = [
+        "# HELP factory_data_up 1 if datasets loaded in memory.",
+        "# TYPE factory_data_up gauge",
+        f"factory_data_up {up}",
+        "# HELP factory_alerts_active Current active alerts.",
+        "# TYPE factory_alerts_active gauge",
+        f"factory_alerts_active {n_alerts}",
+        "# HELP factory_uptime_seconds Process uptime in seconds.",
+        "# TYPE factory_uptime_seconds gauge",
+        f"factory_uptime_seconds {time.time() - _METRICS_START_TIME:.2f}",
+        "# HELP factory_http_requests_total Total HTTP requests by route and status.",
+        "# TYPE factory_http_requests_total counter",
+    ]
+    for (route, status), count in sorted(_http_requests_total.items()):
+        out.append(f'factory_http_requests_total{{route="{route}",status="{status}"}} {count}')
+    if _kpis:
+        for kpi in _kpis:
+            name = str(getattr(kpi, "name", "")).replace('"', "")
+            try:
+                value = float(getattr(kpi, "value", 0.0))
+            except (TypeError, ValueError):
+                continue
+            out.append(f'factory_kpi_value{{kpi="{name}"}} {value:g}')
+    return PlainTextResponse("\n".join(out) + "\n", media_type="text/plain; version=0.0.4")
 
 
 @app.get("/api/v1/data")

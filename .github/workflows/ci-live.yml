@@ -1,0 +1,34 @@
+# CI-live — Factory Data Automation live/infra tests. MANUAL TRIGGER ONLY
+# (workflow_dispatch): these tests need a live LLM gateway / model endpoint or
+# live infra (DB, Ollama) and must never run on push/PR. No coverage gate here.
+name: CI-live (manual — live/infra tests)
+
+on:
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+
+permissions:
+  contents: read
+
+jobs:
+  live-tests:
+    name: Live/infra tests (manual trigger only)
+    runs-on: ubuntu-latest
+    env:
+      LIVE_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run live/infra tests (no fail-under)
+        run: python -m pytest tests/ -v -m "live or infra" --strict-markers --tb=short

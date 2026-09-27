@@ -11,8 +11,40 @@ from typing import Optional
 
 import pandas as pd
 
+from app.data_contracts.schemas import DATASET_MODELS
 from app.utils.config import DATA_PROCESSED_DIR, DATA_RAW_DIR
 from app.utils.logging_config import get_logger, log_event
+
+# Measure columns that must be numeric for KPI math. Must stay in sync with
+# app/data_contracts/schemas.py (Phase 2). Coerced with errors="coerce" so a
+# stray text cell becomes NaN (then median-filled) instead of poisoning the
+# whole column to str dtype and crashing groupby().mean() at startup.
+NUMERIC_COLUMNS = frozenset(
+    {
+        "Target_Qty",
+        "Actual_Qty",
+        "Good_Qty",
+        "Reject_Qty",
+        "Cycle_Time_sec",
+        "Stock_Qty",
+        "Incoming_Qty",
+        "Outgoing_Qty",
+        "Reorder_Point",
+        "Max_Capacity",
+        "Unit_Price",
+        "Defect_Count",
+        "Inspected_Qty",
+        "Speed_RPM",
+        "Temperature_C",
+        "Vibration_mm",
+        "Power_Usage_pct",
+        "Downtime_min",
+        "Hours_Worked",
+        "Units_Produced",
+        "Defects_Caused",
+        "Overtime_hrs",
+    }
+)
 
 logger = get_logger("etl", "pipeline")
 
@@ -92,9 +124,21 @@ def clean_dataframe(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
 
     df = df.copy()
 
-    # Remove duplicates
+    # Coerce known measure columns to numeric FIRST. A single blank cell makes
+    # pandas read the whole column as object/str, after which median-fill,
+    # clip(lower=0) and downstream mean() all break (lifespan crash). Mirrors
+    # the Phase-2 Data Contracts (app/data_contracts/schemas.py).
+    for col in NUMERIC_COLUMNS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Remove duplicates — deliberately BEFORE fills/clip, on the coerced frame:
+    # dedup-on-raw first, so median-fill and .clip(lower=0) can never merge
+    # distinct rows (-5 vs -1 becoming the same 0, the seeded idempotency
+    # failure: 30 rows -> 29). reset_index keeps downstream positional drops
+    # (.drop(index=...), e.g. the contract gate) honest.
     before = len(df)
-    df = df.drop_duplicates()
+    df = df.drop_duplicates().reset_index(drop=True)
     if len(df) < before:
         print(f"  Removed {before - len(df)} duplicates from {dataset_name}")
 
@@ -118,7 +162,9 @@ def clean_dataframe(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
             pass
 
     # Standardize text columns (strip whitespace, uppercase first letters)
-    for col in df.select_dtypes(include=["object"]).columns:
+    # include=["object", "string"] (not bare "object"): pandas 3 stores text as
+    # "str" dtype and a bare "object" selector raises a Pandas4Warning there.
+    for col in df.select_dtypes(include=["object", "string"]).columns:
         try:
             df[col] = df[col].astype(str).str.strip()
         except Exception:
@@ -138,6 +184,9 @@ def clean_dataframe(df: pd.DataFrame, dataset_name: str) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].clip(lower=0)
 
+    # No second dedup after clipping on purpose: two distinct rows that clip to
+    # the same values stay distinct records. Double-counting dirty rows is the
+    # caller's choice to quarantine (see apply_contract_gate), not the cleaner's.
     log_event(logger, "data_cleaned", component="etl", dataset=dataset_name, rows=len(df))
     return df
 
@@ -169,6 +218,13 @@ def load_and_clean_all(directory: Optional[str] = None) -> dict[str, pd.DataFram
         )
         df = load_file(filepath)
         if df is not None:
+            # Validate against the Phase-2 contracts BEFORE cleaning. The contract
+            # is "contracts REJECT, cleaning FILLS": a row that violates a
+            # hard rule (negative qty, future date, reject > actual) is written
+            # to the quarantine DLQ and dropped, never silently imputed. Without
+            # this step a typo silently skews OEE and Yield and looks like a real
+            # production problem.
+            df = apply_contract_gate(df, dataset_name, filepath)
             df = clean_dataframe(df, dataset_name)
             datasets[dataset_name] = df
         else:
@@ -178,6 +234,85 @@ def load_and_clean_all(directory: Optional[str] = None) -> dict[str, pd.DataFram
 
     log_event(logger, "etl_complete", component="etl", datasets_loaded=list(datasets.keys()))
     return datasets
+
+
+def apply_contract_gate(
+    df: pd.DataFrame,
+    dataset_name: str,
+    filepath: str = "",
+    quarantine_path: Optional[str] = None,
+) -> pd.DataFrame:
+    """Drop contract-violating rows, recording each one to the quarantine DLQ.
+
+    Validation runs on the DataFrame that is about to enter KPI math, so the
+    row indexes in the quarantine file match the rows actually removed.
+
+    Fails open on purpose: if the validator itself errors (unknown dataset, a
+    pydantic change, a contract bug), the pipeline logs it and returns the frame
+    unchanged rather than discarding a whole file of good production data. A
+    validator crash must not look like a total data outage.
+    """
+    try:
+        from app.data_contracts import infer_dataset, validate_rows
+
+        from app.etl.quarantine import (
+            rejected_row_indices,
+            write_quarantine,
+        )
+
+        try:
+            dataset = infer_dataset(os.path.basename(filepath)) if filepath else dataset_name
+        except ValueError:
+            dataset = dataset_name
+        if dataset not in DATASET_MODELS:
+            log_event(
+                logger,
+                "contract_skip",
+                level=logging.WARNING,
+                component="etl",
+                dataset=dataset_name,
+                reason="no_contract",
+            )
+            return df
+
+        report = validate_rows(dataset, df.to_dict("records"))
+        if not report.violations:
+            return df
+
+        # Map contract row positions back to DataFrame index labels before
+        # dropping: reset_index() would renumber, and a duplicate/filtered index
+        # would otherwise make .drop() remove the wrong rows.
+        bad_positions = sorted(rejected_row_indices(report.violations))
+        written = write_quarantine(
+            report.violations,
+            dataset=dataset,
+            source_file=filepath or f"{dataset_name}.csv",
+            **({"path": quarantine_path} if quarantine_path else {}),
+        )
+        clean_df = df.reset_index(drop=True).drop(index=bad_positions, errors="ignore")
+        log_event(
+            logger,
+            "rows_quarantined",
+            level=logging.WARNING,
+            component="etl",
+            dataset=dataset,
+            rejected_rows=len(bad_positions),
+            violation_records=len(report.violations),
+            written=written,
+            remaining=len(clean_df),
+        )
+        return clean_df
+    except Exception as exc:
+        log_event(
+            logger,
+            "contract_gate_error",
+            level=logging.ERROR,
+            component="etl",
+            dataset=dataset_name,
+            error=f"{type(exc).__name__}: {exc}",
+            action="failing_open",
+        )
+        return df
 
 
 def save_processed(datasets: dict[str, pd.DataFrame], directory: Optional[str] = None):

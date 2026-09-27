@@ -3,7 +3,10 @@
 import os
 import sys
 
-import pandas as pd
+import pytest
+
+pandas = pytest.importorskip("pandas", reason="pandas required (CI installs requirements.txt)")
+pd = pandas
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
