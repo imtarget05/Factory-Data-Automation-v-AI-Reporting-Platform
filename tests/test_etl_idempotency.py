@@ -19,6 +19,7 @@ job (see tests/test_quarantine.py), not the cleaner's.
 
 No new dependencies; no network.
 """
+
 from __future__ import annotations
 
 import csv
@@ -40,12 +41,14 @@ _DATES = [f"2026-01-{d:02d}" for d in range(1, 10)]
 def _random_rows(rng: random.Random, n: int) -> list[dict]:
     rows = []
     for _ in range(n):
-        rows.append({
-            "Date": rng.choice(_DATES),
-            "Machine_ID": rng.choice(_MACHINES),
-            "Target_Qty": str(rng.choice([0, 50, 100, 200, -5])),
-            "Actual_Qty": str(rng.choice([0, 90, 180, 210, -1])),
-        })
+        rows.append(
+            {
+                "Date": rng.choice(_DATES),
+                "Machine_ID": rng.choice(_MACHINES),
+                "Target_Qty": str(rng.choice([0, 50, 100, 200, -5])),
+                "Actual_Qty": str(rng.choice([0, 90, 180, 210, -1])),
+            }
+        )
     return rows
 
 
@@ -67,11 +70,14 @@ def _clean(rows: list[dict]) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        out.append({
-            "Date": r["Date"], "Machine_ID": r["Machine_ID"],
-            "Target_Qty": max(0, int(r["Target_Qty"])),
-            "Actual_Qty": max(0, int(r["Actual_Qty"])),
-        })
+        out.append(
+            {
+                "Date": r["Date"],
+                "Machine_ID": r["Machine_ID"],
+                "Target_Qty": max(0, int(r["Target_Qty"])),
+                "Actual_Qty": max(0, int(r["Actual_Qty"])),
+            }
+        )
     return out
 
 
@@ -87,8 +93,7 @@ def _aggregate(rows: list[dict]) -> dict[tuple, dict]:
 
 
 def _digest(agg: dict) -> str:
-    canon = "\n".join(f"{k}:{v['Target']},{v['Actual']},{v['n']}"
-                      for k, v in sorted(agg.items()))
+    canon = "\n".join(f"{k}:{v['Target']},{v['Actual']},{v['n']}" for k, v in sorted(agg.items()))
     return hashlib.sha256(canon.encode()).hexdigest()
 
 
@@ -100,8 +105,7 @@ def test_double_run_yields_identical_aggregates():
         # Second run re-parses the same CSV bytes (fresh read, like a rerun).
         reparsed = list(csv.DictReader(io.StringIO(_to_csv(rows))))
         second = _digest(_aggregate(_clean(reparsed)))
-        assert first == second, (
-            f"case {case}: ETL rerun over identical input changed aggregates")
+        assert first == second, f"case {case}: ETL rerun over identical input changed aggregates"
 
 
 def test_duplicated_input_rows_do_not_duplicate_aggregates():
@@ -110,12 +114,12 @@ def test_duplicated_input_rows_do_not_duplicate_aggregates():
         rows = _random_rows(rng, rng.randint(1, 30))
         single = _digest(_aggregate(_clean(rows)))
         doubled = _digest(_aggregate(_clean(rows + rows)))
-        assert single == doubled, (
-            f"case {case}: duplicated input rows leaked into aggregates")
+        assert single == doubled, f"case {case}: duplicated input rows leaked into aggregates"
         # Quantities are clipped, never negative, after cleaning.
         for r in _clean(rows):
             assert r["Target_Qty"] >= 0 and r["Actual_Qty"] >= 0, (
-                f"case {case}: negative quantity survived cleaning: {r}")
+                f"case {case}: negative quantity survived cleaning: {r}"
+            )
 
 
 def test_real_clean_dataframe_double_run_when_pandas_available():
@@ -124,8 +128,10 @@ def test_real_clean_dataframe_double_run_when_pandas_available():
     pytest.importorskip("dotenv")
     import sys
     from pathlib import Path
+
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from app.etl.pipeline import clean_dataframe
+
     rng = random.Random(SEED + 2)
     for case in range(20):
         rows = _random_rows(rng, rng.randint(1, 30))
@@ -134,8 +140,7 @@ def test_real_clean_dataframe_double_run_when_pandas_available():
         df["Actual_Qty"] = pd.to_numeric(df["Actual_Qty"])
         a = clean_dataframe(df, "production")
         b = clean_dataframe(df, "production")
-        assert a.equals(b), (
-            f"case {case}: real clean_dataframe rerun changed the frame")
+        assert a.equals(b), f"case {case}: real clean_dataframe rerun changed the frame"
         # Clipping merges distinct dirty rows by design (-5 and -1 both become
         # 0), so the cleaned frame legitimately contains duplicates. Rerun
         # stability — asserted above — is what this test exists to prove.

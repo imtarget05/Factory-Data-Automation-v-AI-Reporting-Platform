@@ -25,10 +25,11 @@ Security: there is no SQL engine here at all, which is the entire point.
 The LLM never sees raw data either — only results (already aggregated, capped
 at ``MAX_ROWS`` rows).
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -41,7 +42,7 @@ _OPERATORS = ("==", "!=", ">", ">=", "<", "<=", "in", "not in")
 
 # (frame, metric) pairs the sample questions below are built from. Kept in one
 # place so the prompt, the tests, and the docs cannot drift apart.
-SAMPLE_QUESTIONS: List[Dict[str, Any]] = [
+SAMPLE_QUESTIONS: list[dict[str, Any]] = [
     {
         "question": "Sản lượng hôm nay so với kế hoạch thế nào?",
         "spec": {
@@ -124,9 +125,9 @@ def _reject_forbidden_statements(value: Any, where: str) -> None:
         raise ValueError(f"unknown {where} {value[:60]!r}; forbidden statement")
 
 
-def _resolve_frames(kpis: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
+def _resolve_frames(kpis: dict[str, Any]) -> dict[str, pd.DataFrame]:
     """Flatten the kpi_engine output into the named frames this tool queries."""
-    frames: Dict[str, pd.DataFrame] = {}
+    frames: dict[str, pd.DataFrame] = {}
     for name, value in (kpis or {}).items():
         if isinstance(value, pd.DataFrame) and not value.empty:
             frames[name] = value
@@ -139,7 +140,7 @@ def _resolve_frames(kpis: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     return frames
 
 
-def validate_spec(spec: Dict[str, Any], frames: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+def validate_spec(spec: dict[str, Any], frames: dict[str, pd.DataFrame]) -> dict[str, Any]:
     """Check a query spec and return its normalized form. Raises ValueError."""
     if not isinstance(spec, dict):
         raise ValueError("spec must be an object")
@@ -196,7 +197,7 @@ def validate_spec(spec: Dict[str, Any], frames: Dict[str, pd.DataFrame]) -> Dict
     }
 
 
-def execute_spec(spec: Dict[str, Any], frames: Dict[str, pd.DataFrame]) -> List[Dict[str, Any]]:
+def execute_spec(spec: dict[str, Any], frames: dict[str, pd.DataFrame]) -> list[dict[str, Any]]:
     """Run a validated spec against the frames. Raises ValueError on bad specs."""
     norm = validate_spec(spec, frames)
     frame = frames[norm["frame"]].copy()
@@ -239,11 +240,11 @@ def execute_spec(spec: Dict[str, Any], frames: Dict[str, pd.DataFrame]) -> List[
 
 def answer_with_llm(
     question: str,
-    kpis: Dict[str, Any],
-    model: Optional[str] = None,
-    base_url: Optional[str] = None,
+    kpis: dict[str, Any],
+    model: str | None = None,
+    base_url: str | None = None,
     timeout: int = 60,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Ask the LAN LLM to write a spec for ``question``, execute it, summarize.
 
     Two-stage, matching the Helpdesk agent's propose-then-check split:
@@ -341,7 +342,7 @@ def answer_with_llm(
     return {"answer": (answer or "").strip(), "rows": rows, "spec": spec, "error": ""}
 
 
-def run_sample_questions(kpis: Dict[str, Any]) -> List[Dict[str, Any]]:
+def run_sample_questions(kpis: dict[str, Any]) -> list[dict[str, Any]]:
     """Execute the 5 documented sample questions without any LLM call.
 
     Deterministic smoke test for CI/offline runs: proves each sample spec in

@@ -4,6 +4,7 @@ Covers: valid spec -> 200 with rows; DELETE/DROP frame -> 422 (never 500);
 unknown frame/metric -> 422; top_n bomb capped at MAX_ROWS; timeout clamped
 and respected; malformed bodies -> 422, never 500.
 """
+
 from __future__ import annotations
 
 import sys
@@ -100,8 +101,14 @@ def test_malformed_bodies_never_500(client):
         {"spec": "DROP TABLE x"},
         {"spec": {"frame": "daily_production"}},
         {"foo": "bar"},
-        {"spec": {"frame": "daily_production", "metric": "Total_Actual",
-                   "group_by": ["Date"], "agg": "eval"}},
+        {
+            "spec": {
+                "frame": "daily_production",
+                "metric": "Total_Actual",
+                "group_by": ["Date"],
+                "agg": "eval",
+            }
+        },
     ):
         r = client.post("/api/v1/query", json=body)
         assert r.status_code in (200, 422), f"{body}: got {r.status_code}"

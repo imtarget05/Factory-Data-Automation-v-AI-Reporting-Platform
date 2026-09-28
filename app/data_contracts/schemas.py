@@ -30,8 +30,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validat
 NonEmptyStr = Annotated[str, Field(min_length=1)]
 
 _NON_NULLABLE_MSG = (
-    "blank/None on a non-nullable field is a violation "
-    "(contracts reject; cleaning fills)"
+    "blank/None on a non-nullable field is a violation (contracts reject; cleaning fills)"
 )
 
 

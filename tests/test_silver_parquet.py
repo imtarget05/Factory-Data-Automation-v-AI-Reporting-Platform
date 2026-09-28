@@ -4,6 +4,7 @@ Engine honesty: uses the polars path if polars is importable, else the
 pandas+pyarrow path. If NEITHER is available the parquet test skips and the
 CSV-gzip fallback test runs instead (mark FDA-018/019 PARTIAL in that case).
 """
+
 from __future__ import annotations
 
 import os

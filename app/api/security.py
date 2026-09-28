@@ -6,6 +6,7 @@ Pattern copied from CreditFlow/backend/security.py but simplified:
 - skips safe paths: /, /api/v1/health, /metrics, /docs, /openapi.json
 - Prometheus /metrics stays open by design (scraper has no key)
 """
+
 import os
 import secrets
 

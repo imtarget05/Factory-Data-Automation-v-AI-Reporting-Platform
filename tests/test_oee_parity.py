@@ -7,6 +7,7 @@ per-day ratios + round() mirror app/etl/kpi_engine.py::calculate_oee exactly
 match within 1e-6 on every day. An optional duckdb leg runs when duckdb is
 importable (importorskip-gated, never required).
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -40,14 +41,12 @@ def _day_str(series) -> list[str]:
     return pd.to_datetime(series).dt.strftime("%Y-%m-%d").tolist()
 
 
-def _sqlite_oee(prod: "pd.DataFrame", mach: "pd.DataFrame") -> "pd.DataFrame":
+def _sqlite_oee(prod: pd.DataFrame, mach: pd.DataFrame) -> pd.DataFrame:
     """Independent OEE via SQL GROUP BY day; ratios/rounding mirror kpi_engine."""
     con = sqlite3.connect(":memory:")
     try:
         cur = con.cursor()
-        cur.execute(
-            "CREATE TABLE production(day TEXT, target REAL, actual REAL, good REAL)"
-        )
+        cur.execute("CREATE TABLE production(day TEXT, target REAL, actual REAL, good REAL)")
         cur.executemany(
             "INSERT INTO production VALUES (?,?,?,?)",
             zip(
@@ -107,13 +106,13 @@ def _sqlite_oee(prod: "pd.DataFrame", mach: "pd.DataFrame") -> "pd.DataFrame":
     return pd.DataFrame(rows).sort_values("Date").reset_index(drop=True)
 
 
-def _norm(frame: "pd.DataFrame") -> "pd.DataFrame":
+def _norm(frame: pd.DataFrame) -> pd.DataFrame:
     out = frame.copy()
     out["Date"] = pd.to_datetime(out["Date"])
     return out.sort_values("Date").reset_index(drop=True)
 
 
-def _assert_parity(left: "pd.DataFrame", right: "pd.DataFrame", leg: str) -> None:
+def _assert_parity(left: pd.DataFrame, right: pd.DataFrame, leg: str) -> None:
     assert len(left) == len(right) > 0, f"{leg}: day count {len(left)} vs {len(right)}"
     assert (left["Date"].values == right["Date"].values).all(), f"{leg}: day mismatch"
     for col in COMPONENTS:
@@ -124,9 +123,7 @@ def _assert_parity(left: "pd.DataFrame", right: "pd.DataFrame", leg: str) -> Non
 def test_oee_sqlite_parity(cleaned):
     """Required offline leg: sqlite3 GROUP BY day matches calculate_oee."""
     pandas_oee = _norm(calculate_oee(cleaned["production"], cleaned["machine"]))
-    sqlite_oee = _norm(
-        _sqlite_oee(cleaned["production"], cleaned["machine"])
-    )
+    sqlite_oee = _norm(_sqlite_oee(cleaned["production"], cleaned["machine"]))
     _assert_parity(pandas_oee, sqlite_oee, "sqlite3")
 
 
@@ -180,7 +177,9 @@ def test_oee_duckdb_parity(cleaned):
             }
         )
     duck_oee = _norm(pd.DataFrame(rows))
-    _assert_parity(_norm(calculate_oee(cleaned["production"], cleaned["machine"])), duck_oee, "duckdb")
+    _assert_parity(
+        _norm(calculate_oee(cleaned["production"], cleaned["machine"])), duck_oee, "duckdb"
+    )
 
 
 if __name__ == "__main__":

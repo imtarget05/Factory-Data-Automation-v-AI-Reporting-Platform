@@ -10,8 +10,8 @@ pd = pandas
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.etl.pipeline import clean_dataframe, discover_files, load_file, run_etl
-from app.utils.config import DATA_RAW_DIR
+from app.etl.pipeline import clean_dataframe, discover_files, load_file, run_etl  # noqa: E402
+from app.utils.config import DATA_RAW_DIR  # noqa: E402
 
 
 class TestDiscoverFiles:

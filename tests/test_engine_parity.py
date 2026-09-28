@@ -4,10 +4,12 @@ Verifies that app/etl/pipeline.py (Pandas) and app/etl/polars_etl.py (Polars)
 produce equivalent cleaning results, row counts, and KPI aggregations
 when given identical source data.
 """
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -17,9 +19,9 @@ if str(REPO_ROOT) not in sys.path:
 pd = pytest.importorskip("pandas", reason="Engine parity test requires pandas")
 pl = pytest.importorskip("polars", reason="Engine parity test requires polars")
 
-from app.etl.pipeline import clean_dataframe, discover_files, load_file
-from app.etl.polars_etl import clean_polars, discover_files_polars, load_file_polars
-from app.etl.kpi_engine import calculate_oee
+from app.etl.kpi_engine import calculate_oee  # noqa: E402
+from app.etl.pipeline import clean_dataframe, discover_files, load_file  # noqa: E402
+from app.etl.polars_etl import clean_polars, discover_files_polars, load_file_polars  # noqa: E402
 
 TOL = 1e-6
 OEE_COMPONENTS = ["Availability_pct", "Performance_pct", "Quality_pct", "OEE_pct"]

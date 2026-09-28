@@ -18,6 +18,7 @@ at the level the stdlib guarantees, plus a documented sanitizer contract:
 
 A real-exporter test runs only when pandas+reportlab are installed.
 """
+
 from __future__ import annotations
 
 import csv
@@ -55,8 +56,13 @@ def _adversarial_payload(rng: random.Random) -> str:
     kind = rng.randrange(8)
     if kind == 0:
         return rng.choice(["=", "+", "-", "@"]) + rng.choice(
-            ["SUM(A1:A10)", "HYPERLINK(\"http://evil.example\",\"click\")",
-             "2+5+cmd|' /C calc'!A0", "cmd|'/c calc'!A0"])
+            [
+                "SUM(A1:A10)",
+                'HYPERLINK("http://evil.example","click")',
+                "2+5+cmd|' /C calc'!A0",
+                "cmd|'/c calc'!A0",
+            ]
+        )
     if kind == 1:
         return rng.choice(["\t", " ", "  \t "]) + "=" + rng.choice(["1+1", "CMD()"])
     if kind == 2:
@@ -79,11 +85,13 @@ def test_formula_payloads_are_neutralized():
         safe = sanitize_csv_cell(payload)
         head = safe.lstrip(" \t")[:1]
         assert head == "'" or head not in RISKY_FIRST, (
-            f"case {case}: payload still triggers formula execution: {payload!r}")
+            f"case {case}: payload still triggers formula execution: {payload!r}"
+        )
         # The sanitized cell must still carry the original content visibly
         # (flagged, not silently dropped) for audit.
         assert payload.strip() in safe or safe == "'" + payload, (
-            f"case {case}: sanitizer must not silently drop content")
+            f"case {case}: sanitizer must not silently drop content"
+        )
 
 
 def test_sanitized_cells_round_trip_as_single_inert_field():
@@ -95,24 +103,32 @@ def test_sanitized_cells_round_trip_as_single_inert_field():
         csv.writer(buf).writerow(["worker", safe, "42"])
         buf.seek(0)
         row = next(csv.reader(buf))
-        assert len(row) == 3, (
-            f"case {case}: payload broke CSV column structure: {payload!r}")
-        assert row[1] == safe, (
-            f"case {case}: round-trip altered the sanitized cell")
+        assert len(row) == 3, f"case {case}: payload broke CSV column structure: {payload!r}"
+        assert row[1] == safe, f"case {case}: round-trip altered the sanitized cell"
         assert not row[1].lstrip(" \t").startswith(RISKY_FIRST), (
-            f"case {case}: cell re-armed as formula after round-trip")
+            f"case {case}: cell re-armed as formula after round-trip"
+        )
 
 
 def test_benign_cells_untouched():
     rng = random.Random(SEED + 2)
-    benign = ["Nguyen Van A", "M-01", "120", "98.5", "Ca đêm",
-              "2026-01-05", "", "line-3_ok", "100%"]
+    benign = [
+        "Nguyen Van A",
+        "M-01",
+        "120",
+        "98.5",
+        "Ca đêm",
+        "2026-01-05",
+        "",
+        "line-3_ok",
+        "100%",
+    ]
     for case in range(N_CASES):
         cell = rng.choice(benign) if rng.random() < 0.7 else str(rng.randint(0, 9999))
         assert sanitize_csv_cell(cell) == cell, (
-            f"case {case}: benign report cell was over-sanitized: {cell!r}")
-        assert sanitize_csv_cell(None) == "", (
-            f"case {case}: None must map to empty string")
+            f"case {case}: benign report cell was over-sanitized: {cell!r}"
+        )
+        assert sanitize_csv_cell(None) == "", f"case {case}: None must map to empty string"
 
 
 def test_real_exporter_flags_formulas_when_deps_available():
@@ -122,7 +138,9 @@ def test_real_exporter_flags_formulas_when_deps_available():
     pytest.importorskip("dotenv")
     import sys
     from pathlib import Path
+
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from app.reports.exporter import ReportExporter  # noqa: E402
+
     assert hasattr(ReportExporter, "export_to_excel")
     assert hasattr(ReportExporter, "export_to_pdf")

@@ -10,7 +10,7 @@ pd = pandas
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.etl.kpi_engine import (
+from app.etl.kpi_engine import (  # noqa: E402
     calculate_daily_production,
     calculate_defect_analysis,
     calculate_inventory_kpi,

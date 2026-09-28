@@ -4,11 +4,13 @@ Ensures that tests requiring live LAN LLM, Ollama, Qdrant, or databases
 are gracefully skipped when run in offline CI environments or when services are down.
 Only runs live tests if LIVE_TESTS=1 is set in the environment.
 """
+
 from __future__ import annotations
 
 import os
 import socket
 import urllib.request
+
 import pytest
 
 LIVE_TESTS_ENABLED = os.environ.get("LIVE_TESTS", "").lower() in ("1", "true", "yes")

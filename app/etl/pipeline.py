@@ -254,7 +254,6 @@ def apply_contract_gate(
     """
     try:
         from app.data_contracts import infer_dataset, validate_rows
-
         from app.etl.quarantine import (
             rejected_row_indices,
             write_quarantine,

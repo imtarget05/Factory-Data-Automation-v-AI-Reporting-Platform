@@ -45,6 +45,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 def _allowed_origins() -> list[str]:
     raw = os.getenv("FACTORY_CORS_ORIGINS", "http://localhost:8501,http://localhost:3000")
     return [o.strip() for o in raw.split(",") if o.strip()]

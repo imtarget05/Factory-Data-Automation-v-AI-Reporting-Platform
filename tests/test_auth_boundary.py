@@ -1,4 +1,5 @@
 """Phase 0 evidence: API-key boundary (runnable offline, no pandas needed)."""
+
 import os
 import sys
 
@@ -25,20 +26,19 @@ def test_main_wires_middleware_and_cors():
     assert "ApiKeyMiddleware" in src, "main.py must wire ApiKeyMiddleware"
     assert 'allow_origins=["*"]' not in src, "CORS * must be gone"
     assert "FACTORY_CORS_ORIGINS" in src
-    assert "X-Factory-API-Key" in open(
-        os.path.join(REPO_ROOT, "app", "api", "security.py"), encoding="utf-8"
-    ).read()
+    assert (
+        "X-Factory-API-Key"
+        in open(os.path.join(REPO_ROOT, "app", "api", "security.py"), encoding="utf-8").read()
+    )
 
 
 def test_middleware_behavior_without_pandas():
     """Drive the real middleware with stubbed call_next (no fastapi server needed)."""
-    import asyncio
     os.environ["FACTORY_API_KEY"] = "secret-test-key"
     try:
-        from app.api.security import ApiKeyMiddleware
-        from starlette.applications import Starlette
         from starlette.responses import PlainTextResponse
-        from starlette.testclient import TestClient
+
+        from app.api.security import ApiKeyMiddleware
 
         async def ok(scope, receive, send):
             resp = PlainTextResponse("ok")

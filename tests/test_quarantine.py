@@ -12,12 +12,12 @@ rows are recorded (not silently dropped), and — the security point — that
 attacker-controlled cell values cannot re-arm as formulas when an operator
 opens the quarantine file in Excel.
 """
+
 from __future__ import annotations
 
 import csv
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -60,7 +60,7 @@ class TestSanitizeQuarantineCell:
             "@SUM(1+1)",
             "+2+2",
             "-2+3",
-            "  =HYPERLINK(\"http://evil\",\"x\")",
+            '  =HYPERLINK("http://evil","x")',
             "\t=CMD()",
         ],
     )
@@ -168,19 +168,27 @@ class TestWriteQuarantine:
     def test_unwritable_path_does_not_raise(self):
         # A full disk / read-only mount must not abort an ETL that already
         # cleaned good data.
-        assert write_quarantine(
-            [{"row_index": 0, "field": "a", "value": 1, "rule": "r"}],
-            dataset="production",
-            path="/proc/not-writable/x.csv",
-        ) == 0
+        assert (
+            write_quarantine(
+                [{"row_index": 0, "field": "a", "value": 1, "rule": "r"}],
+                dataset="production",
+                path="/proc/not-writable/x.csv",
+            )
+            == 0
+        )
 
     def test_summary_counts_by_dataset(self, qpath):
-        write_quarantine([{"row_index": 0, "field": "a", "value": 1, "rule": "r"}],
-                        dataset="production", path=qpath)
-        write_quarantine([{"row_index": 1, "field": "a", "value": 1, "rule": "r"}],
-                        dataset="quality", path=qpath)
-        write_quarantine([{"row_index": 2, "field": "a", "value": 1, "rule": "r"}],
-                        dataset="quality", path=qpath)
+        write_quarantine(
+            [{"row_index": 0, "field": "a", "value": 1, "rule": "r"}],
+            dataset="production",
+            path=qpath,
+        )
+        write_quarantine(
+            [{"row_index": 1, "field": "a", "value": 1, "rule": "r"}], dataset="quality", path=qpath
+        )
+        write_quarantine(
+            [{"row_index": 2, "field": "a", "value": 1, "rule": "r"}], dataset="quality", path=qpath
+        )
         assert quarantine_summary(qpath) == {"production": 1, "quality": 2}
 
     def test_summary_of_missing_file_is_empty(self, qpath):
@@ -192,24 +200,37 @@ class TestContractGateInPipeline:
 
     @staticmethod
     def _row(target, reject):
-        return {"Date": "2026-01-05", "Line": "L1", "Shift": "S1", "Product": "P1",
-                "Machine_ID": "M-01", "Worker_ID": "W-1", "Target_Qty": target,
-                "Actual_Qty": 90, "Good_Qty": 85, "Reject_Qty": reject,
-                "Cycle_Time_sec": 30.0, "Created_At": "2026-01-05T07:00:00"}
+        return {
+            "Date": "2026-01-05",
+            "Line": "L1",
+            "Shift": "S1",
+            "Product": "P1",
+            "Machine_ID": "M-01",
+            "Worker_ID": "W-1",
+            "Target_Qty": target,
+            "Actual_Qty": 90,
+            "Good_Qty": 85,
+            "Reject_Qty": reject,
+            "Cycle_Time_sec": 30.0,
+            "Created_At": "2026-01-05T07:00:00",
+        }
 
     @classmethod
     def _frame(cls):
-        return pd.DataFrame([
-            cls._row(100, 5),     # valid
-            cls._row(-50, 5),     # negative target
-            cls._row(100, 999),   # reject > actual: internally inconsistent
-        ])
+        return pd.DataFrame(
+            [
+                cls._row(100, 5),  # valid
+                cls._row(-50, 5),  # negative target
+                cls._row(100, 999),  # reject > actual: internally inconsistent
+            ]
+        )
 
     def test_bad_rows_are_dropped_not_imputed(self, qpath):
         from app.etl.pipeline import apply_contract_gate
 
-        out = apply_contract_gate(self._frame(), "production",
-                                  "production.csv", quarantine_path=qpath)
+        out = apply_contract_gate(
+            self._frame(), "production", "production.csv", quarantine_path=qpath
+        )
         # Rows 1 and 2 violate hard rules and must be GONE, not clipped to 0 —
         # clipping would invent a plausible-looking production record.
         assert len(out) == 1
@@ -218,8 +239,7 @@ class TestContractGateInPipeline:
     def test_dropped_rows_are_recorded(self, qpath):
         from app.etl.pipeline import apply_contract_gate
 
-        apply_contract_gate(self._frame(), "production", "production.csv",
-                            quarantine_path=qpath)
+        apply_contract_gate(self._frame(), "production", "production.csv", quarantine_path=qpath)
         rows = _read(qpath)
         assert {r["row_index"] for r in rows} == {"1", "2"}
         assert all(r["dataset"] == "production" for r in rows)
@@ -228,8 +248,9 @@ class TestContractGateInPipeline:
         """A second pass must find nothing left to reject."""
         from app.etl.pipeline import apply_contract_gate
 
-        out = apply_contract_gate(self._frame(), "production", "production.csv",
-                                  quarantine_path=qpath)
+        out = apply_contract_gate(
+            self._frame(), "production", "production.csv", quarantine_path=qpath
+        )
         before = os.path.getsize(qpath)
         apply_contract_gate(out, "production", "production.csv", quarantine_path=qpath)
         assert os.path.getsize(qpath) == before

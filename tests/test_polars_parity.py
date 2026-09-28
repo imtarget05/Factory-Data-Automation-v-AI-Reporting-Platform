@@ -8,10 +8,12 @@ Verifies that for identical input raw data:
 
 Contract: docs/qa/QA_ACCEPTANCE.md -> FDA-009.
 """
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -21,21 +23,49 @@ if str(REPO_ROOT) not in sys.path:
 pd = pytest.importorskip("pandas", reason="Pandas/Polars parity requires pandas")
 pl = pytest.importorskip("polars", reason="Pandas/Polars parity requires polars")
 
-from app.etl.pipeline import clean_dataframe  # noqa: E402
-from app.etl.polars_etl import clean_polars  # noqa: E402
 from app.etl.kpi_engine import (  # noqa: E402
     calculate_daily_production,
     calculate_inventory_kpi,
 )
+from app.etl.pipeline import clean_dataframe  # noqa: E402
+from app.etl.polars_etl import clean_polars  # noqa: E402
 
 
 def test_fda_009_pandas_polars_synthetic_parity():
     """Verify parity on controlled edge-case dataset: duplicates, nulls, negative quantities."""
     records = [
-        {"Date": "2026-01-01", "Machine_ID": "M-01", "Target_Qty": 100, "Actual_Qty": 90, "Good_Qty": 85, "Reject_Qty": 5},
-        {"Date": "2026-01-01", "Machine_ID": "M-01", "Target_Qty": 100, "Actual_Qty": 90, "Good_Qty": 85, "Reject_Qty": 5},  # duplicate
-        {"Date": "2026-01-02", "Machine_ID": "M-02", "Target_Qty": 200, "Actual_Qty": 190, "Good_Qty": 180, "Reject_Qty": 10},
-        {"Date": "2026-01-03", "Machine_ID": "M-01", "Target_Qty": -10, "Actual_Qty": 50, "Good_Qty": 50, "Reject_Qty": 0},  # negative
+        {
+            "Date": "2026-01-01",
+            "Machine_ID": "M-01",
+            "Target_Qty": 100,
+            "Actual_Qty": 90,
+            "Good_Qty": 85,
+            "Reject_Qty": 5,
+        },
+        {
+            "Date": "2026-01-01",
+            "Machine_ID": "M-01",
+            "Target_Qty": 100,
+            "Actual_Qty": 90,
+            "Good_Qty": 85,
+            "Reject_Qty": 5,
+        },  # duplicate
+        {
+            "Date": "2026-01-02",
+            "Machine_ID": "M-02",
+            "Target_Qty": 200,
+            "Actual_Qty": 190,
+            "Good_Qty": 180,
+            "Reject_Qty": 10,
+        },
+        {
+            "Date": "2026-01-03",
+            "Machine_ID": "M-01",
+            "Target_Qty": -10,
+            "Actual_Qty": 50,
+            "Good_Qty": 50,
+            "Reject_Qty": 0,
+        },  # negative
     ]
     df_pd = pd.DataFrame(records)
     df_pl = pl.DataFrame(records)
@@ -56,7 +86,9 @@ def test_fda_009_pandas_polars_synthetic_parity():
     assert c_pd["Good_Qty"].sum() == c_pl["Good_Qty"].sum()
 
 
-@pytest.mark.parametrize("dataset_name", ["production", "quality", "inventory", "machine", "workers"])
+@pytest.mark.parametrize(
+    "dataset_name", ["production", "quality", "inventory", "machine", "workers"]
+)
 def test_fda_009_pandas_polars_raw_files_parity(dataset_name):
     """Verify row count and key column aggregates match between pandas and polars on actual raw data."""
     raw_csv = REPO_ROOT / "data" / "raw" / f"{dataset_name}.csv"
@@ -70,14 +102,18 @@ def test_fda_009_pandas_polars_raw_files_parity(dataset_name):
     c_pl = clean_polars(df_pl, dataset_name)
 
     # 1. Height must match exactly
-    assert len(c_pd) == c_pl.height, f"Row count mismatch on {dataset_name}: PD={len(c_pd)}, PL={c_pl.height}"
+    assert len(c_pd) == c_pl.height, (
+        f"Row count mismatch on {dataset_name}: PD={len(c_pd)}, PL={c_pl.height}"
+    )
 
     # 2. Check numeric column sum parity
     for col in ["Target_Qty", "Actual_Qty", "Good_Qty", "Reject_Qty", "Stock_Qty"]:
         if col in c_pd.columns and col in c_pl.columns:
             sum_pd = float(c_pd[col].sum())
             sum_pl = float(c_pl[col].sum())
-            assert abs(sum_pd - sum_pl) < 1e-4, f"Sum mismatch on {dataset_name}.{col}: PD={sum_pd}, PL={sum_pl}"
+            assert abs(sum_pd - sum_pl) < 1e-4, (
+                f"Sum mismatch on {dataset_name}.{col}: PD={sum_pd}, PL={sum_pl}"
+            )
 
 
 def test_fda_009_downstream_kpi_parity():
@@ -106,5 +142,3 @@ def test_fda_009_downstream_kpi_parity():
     assert len(kpi_inv_pd) == len(kpi_inv_pl)
     assert abs(kpi_inv_pd["Total_Stock"].sum() - kpi_inv_pl["Total_Stock"].sum()) < 1e-4
     assert abs(kpi_inv_pd["Stock_Value"].sum() - kpi_inv_pl["Stock_Value"].sum()) < 1e-4
-
-

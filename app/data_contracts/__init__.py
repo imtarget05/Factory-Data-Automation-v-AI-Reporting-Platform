@@ -8,7 +8,12 @@ from app.data_contracts.schemas import (
     QualityRow,
     WorkerRow,
 )
-from app.data_contracts.validator import ValidationReport, infer_dataset, validate_csv, validate_rows
+from app.data_contracts.validator import (
+    ValidationReport,
+    infer_dataset,
+    validate_csv,
+    validate_rows,
+)
 
 __all__ = [
     "DATASET_MODELS",

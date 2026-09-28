@@ -3,12 +3,14 @@
 Verifies that the ETL pipeline can handle 50,000+ rows without excessive
 memory consumption (< 200 MB) or runaway latency (< 10 seconds).
 """
+
 from __future__ import annotations
 
 import sys
 import time
 import tracemalloc
 from pathlib import Path
+
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +18,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 pd = pytest.importorskip("pandas", reason="Scale test requires pandas")
-from app.etl.pipeline import clean_dataframe
+from app.etl.pipeline import clean_dataframe  # noqa: E402
 
 
 def test_huge_input_scale_and_memory_safety():

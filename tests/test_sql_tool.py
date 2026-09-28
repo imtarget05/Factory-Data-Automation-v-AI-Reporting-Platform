@@ -12,6 +12,7 @@ columns, operators, aggregations, type confusion, row-count bombs) plus the
 positive contract (the 5 documented sample questions run against real frames).
 LLM-dependent paths are marked so CI stays deterministic without the LAN model.
 """
+
 from __future__ import annotations
 
 import os
@@ -33,7 +34,6 @@ from app.ai.sql_tool import (  # noqa: E402
     answer_with_llm,
     execute_spec,
     run_sample_questions,
-    validate_spec,
 )
 
 pytestmark = []  # 'ai' marker intentionally unregistered: CI runs these by path
@@ -71,8 +71,13 @@ class TestSampleQuestions:
 
     def test_results_are_capped(self, frames):
         rows = execute_spec(
-            {"frame": "machine_utilization", "metric": "Total_Downtime",
-             "group_by": ["Machine_ID"], "agg": "sum", "top_n": 500},
+            {
+                "frame": "machine_utilization",
+                "metric": "Total_Downtime",
+                "group_by": ["Machine_ID"],
+                "agg": "sum",
+                "top_n": 500,
+            },
             frames,
         )
         assert len(rows) <= MAX_ROWS
@@ -87,14 +92,22 @@ class TestFilters:
     def test_equality_filter_narrows_results(self, frames):
         date = str(frames["daily_production"]["Date"].iloc[0])
         filtered = execute_spec(
-            {"frame": "daily_production", "metric": "Reject_Rate_pct",
-             "group_by": ["Date"], "agg": "mean",
-             "filters": [{"column": "Date", "op": "==", "value": date}]},
+            {
+                "frame": "daily_production",
+                "metric": "Reject_Rate_pct",
+                "group_by": ["Date"],
+                "agg": "mean",
+                "filters": [{"column": "Date", "op": "==", "value": date}],
+            },
             frames,
         )
         unfiltered = execute_spec(
-            {"frame": "daily_production", "metric": "Reject_Rate_pct",
-             "group_by": ["Date"], "agg": "mean"},
+            {
+                "frame": "daily_production",
+                "metric": "Reject_Rate_pct",
+                "group_by": ["Date"],
+                "agg": "mean",
+            },
             frames,
         )
         assert filtered and unfiltered
@@ -102,9 +115,13 @@ class TestFilters:
 
     def test_impossible_filter_returns_empty(self, frames):
         rows = execute_spec(
-            {"frame": "daily_production", "metric": "Reject_Rate_pct",
-             "group_by": ["Date"], "agg": "mean",
-             "filters": [{"column": "Date", "op": "==", "value": "1900-01-01"}]},
+            {
+                "frame": "daily_production",
+                "metric": "Reject_Rate_pct",
+                "group_by": ["Date"],
+                "agg": "mean",
+                "filters": [{"column": "Date", "op": "==", "value": "1900-01-01"}],
+            },
             frames,
         )
         assert rows == []
@@ -116,30 +133,48 @@ class TestFilters:
 class TestSpecRejection:
     def test_unknown_frame(self, frames):
         with pytest.raises(ValueError, match="unknown frame"):
-            execute_spec({"frame": "__import__('os').system('x')",
-                          "metric": "x", "group_by": []}, frames)
+            execute_spec(
+                {"frame": "__import__('os').system('x')", "metric": "x", "group_by": []}, frames
+            )
 
     def test_unknown_metric(self, frames):
         with pytest.raises(ValueError, match="unknown metric"):
-            execute_spec({"frame": "daily_production", "metric": "DROP TABLE x",
-                          "group_by": []}, frames)
+            execute_spec(
+                {"frame": "daily_production", "metric": "DROP TABLE x", "group_by": []}, frames
+            )
 
     def test_unknown_group_by(self, frames):
         with pytest.raises(ValueError, match="unknown group_by"):
-            execute_spec({"frame": "daily_production", "metric": "Reject_Rate_pct",
-                          "group_by": ["__class__"]}, frames)
+            execute_spec(
+                {
+                    "frame": "daily_production",
+                    "metric": "Reject_Rate_pct",
+                    "group_by": ["__class__"],
+                },
+                frames,
+            )
 
     def test_unknown_aggregation(self, frames):
         with pytest.raises(ValueError, match="unknown aggregation"):
-            execute_spec({"frame": "daily_production", "metric": "Reject_Rate_pct",
-                          "group_by": ["Date"], "agg": "eval"}, frames)
+            execute_spec(
+                {
+                    "frame": "daily_production",
+                    "metric": "Reject_Rate_pct",
+                    "group_by": ["Date"],
+                    "agg": "eval",
+                },
+                frames,
+            )
 
     def test_unknown_operator(self, frames):
         with pytest.raises(ValueError, match="unknown operator"):
             execute_spec(
-                {"frame": "daily_production", "metric": "Reject_Rate_pct",
-                 "group_by": ["Date"],
-                 "filters": [{"column": "Date", "op": "; rm -rf /", "value": "2026-01-01"}]},
+                {
+                    "frame": "daily_production",
+                    "metric": "Reject_Rate_pct",
+                    "group_by": ["Date"],
+                    "filters": [{"column": "Date", "op": "; rm -rf /", "value": "2026-01-01"}],
+                },
                 frames,
             )
 
@@ -149,8 +184,15 @@ class TestSpecRejection:
 
     def test_text_column_with_sum_is_rejected(self, frames):
         with pytest.raises(ValueError, match="not numeric"):
-            execute_spec({"frame": "machine_utilization", "metric": "Machine_ID",
-                          "group_by": ["Date"], "agg": "sum"}, frames)
+            execute_spec(
+                {
+                    "frame": "machine_utilization",
+                    "metric": "Machine_ID",
+                    "group_by": ["Date"],
+                    "agg": "sum",
+                },
+                frames,
+            )
 
     def test_specs_never_mutate_the_frames(self, frames):
         before = {k: v.copy(deep=True) for k, v in frames.items()}

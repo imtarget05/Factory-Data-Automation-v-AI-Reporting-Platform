@@ -178,15 +178,12 @@ def test_missing_mandatory_columns_are_violations_not_crash():
         report = validate_rows("production", [partial])
         assert report.passed == [], missing
         assert any(
-            v["field"] == missing and "required" in v["rule"].lower()
-            for v in report.violations
+            v["field"] == missing and "required" in v["rule"].lower() for v in report.violations
         ), (missing, report.violations)
 
 
 def test_defect_count_above_inspected_qty_is_violation():
-    report = validate_rows(
-        "quality", [_quality_row(Defect_Count=250, Inspected_Qty=200)]
-    )
+    report = validate_rows("quality", [_quality_row(Defect_Count=250, Inspected_Qty=200)])
     assert report.passed == []
     assert len(report.violations) == 1
 
@@ -224,7 +221,10 @@ def test_negative_incoming_or_outgoing_qty_is_violation():
 
 def test_numeric_strings_are_coerced():
     row = _production_row(
-        Target_Qty="42", Actual_Qty="40", Good_Qty="39", Reject_Qty="1",
+        Target_Qty="42",
+        Actual_Qty="40",
+        Good_Qty="39",
+        Reject_Qty="1",
         Cycle_Time_sec="60.5",
     )
     report = validate_rows("production", [row])

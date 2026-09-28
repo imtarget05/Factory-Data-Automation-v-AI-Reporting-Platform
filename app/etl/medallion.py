@@ -14,7 +14,7 @@ Engine selection (honest, no hard dependency):
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 from app.utils.config import BASE_DIR
 
@@ -48,8 +48,8 @@ def _as_pandas(frame: Any) -> Any:
 
 
 def export_silver_production(
-    datasets: Optional[dict] = None,
-    outdir: Optional[str] = None,
+    datasets: dict | None = None,
+    outdir: str | None = None,
     filename: str = "production.parquet",
 ) -> dict[str, Any]:
     """Export the cleaned production frame to silver parquet (snappy).
@@ -88,8 +88,8 @@ def export_silver_production(
 
 
 def export_silver_production_csv_gzip(
-    datasets: Optional[dict] = None,
-    outdir: Optional[str] = None,
+    datasets: dict | None = None,
+    outdir: str | None = None,
     filename: str = "production.csv.gz",
 ) -> dict[str, Any]:
     """Stdlib-friendly fallback: gzip-compressed CSV silver file."""

@@ -56,38 +56,150 @@ def _fallback_seed() -> None:
             target = 400 + rng.randint(-50, 50)
             actual = target - rng.randint(0, 30)
             good = actual - rng.randint(0, 8)
-            prod.append([d, rng.choice(lines), rng.choice(shifts), rng.choice(products),
-                         rng.choice(machines), rng.choice(workers), target, actual,
-                         good, actual - good, round(rng.uniform(30, 120), 1), f"{d}T07:00:00"])
+            prod.append(
+                [
+                    d,
+                    rng.choice(lines),
+                    rng.choice(shifts),
+                    rng.choice(products),
+                    rng.choice(machines),
+                    rng.choice(workers),
+                    target,
+                    actual,
+                    good,
+                    actual - good,
+                    round(rng.uniform(30, 120), 1),
+                    f"{d}T07:00:00",
+                ]
+            )
     prod[0][6] = -prod[0][6]  # one negative target mirrors the cleaning contract
-    write("production.csv",
-          ["Date", "Line", "Shift", "Product", "Machine_ID", "Worker_ID", "Target_Qty",
-           "Actual_Qty", "Good_Qty", "Reject_Qty", "Cycle_Time_sec", "Created_At"], prod)
+    write(
+        "production.csv",
+        [
+            "Date",
+            "Line",
+            "Shift",
+            "Product",
+            "Machine_ID",
+            "Worker_ID",
+            "Target_Qty",
+            "Actual_Qty",
+            "Good_Qty",
+            "Reject_Qty",
+            "Cycle_Time_sec",
+            "Created_At",
+        ],
+        prod,
+    )
 
-    qual = [[d, rng.choice(products), rng.choice(lines), "Scratch", rng.randint(1, 9),
-             200, "Minor", "W-001", f"{d}T08:00:00"] for d in dates for _ in range(6)]
-    write("quality.csv",
-          ["Date", "Product", "Line", "Defect_Type", "Defect_Count", "Inspected_Qty",
-           "Severity", "Inspector_ID", "Created_At"], qual)
+    qual = [
+        [
+            d,
+            rng.choice(products),
+            rng.choice(lines),
+            "Scratch",
+            rng.randint(1, 9),
+            200,
+            "Minor",
+            "W-001",
+            f"{d}T08:00:00",
+        ]
+        for d in dates
+        for _ in range(6)
+    ]
+    write(
+        "quality.csv",
+        [
+            "Date",
+            "Product",
+            "Line",
+            "Defect_Type",
+            "Defect_Count",
+            "Inspected_Qty",
+            "Severity",
+            "Inspector_ID",
+            "Created_At",
+        ],
+        qual,
+    )
 
-    inv = [[d, p, 500 + rng.randint(-50, 50), 15, 20, 150, 2000, 25.5, "ACME",
-            f"{d}T08:00:00"] for d in dates for p in products]
+    inv = [
+        [d, p, 500 + rng.randint(-50, 50), 15, 20, 150, 2000, 25.5, "ACME", f"{d}T08:00:00"]
+        for d in dates
+        for p in products
+    ]
     inv[0][2] = -50
-    write("inventory.csv",
-          ["Date", "Product", "Stock_Qty", "Incoming_Qty", "Outgoing_Qty", "Reorder_Point",
-           "Max_Capacity", "Unit_Price", "Supplier", "Created_At"], inv)
+    write(
+        "inventory.csv",
+        [
+            "Date",
+            "Product",
+            "Stock_Qty",
+            "Incoming_Qty",
+            "Outgoing_Qty",
+            "Reorder_Point",
+            "Max_Capacity",
+            "Unit_Price",
+            "Supplier",
+            "Created_At",
+        ],
+        inv,
+    )
 
-    mach = [[d, rng.choice(machines), "Running", 92.5, 75.0, 1.75, 82.5, 0,
-             rng.choice(lines), f"{d}T08:00:00"] for d in dates for _ in range(8)]
-    write("machine.csv",
-          ["Date", "Machine_ID", "Status", "Speed_RPM", "Temperature_C", "Vibration_mm",
-           "Power_Usage_pct", "Downtime_min", "Line", "Created_At"], mach)
+    mach = [
+        [
+            d,
+            rng.choice(machines),
+            "Running",
+            92.5,
+            75.0,
+            1.75,
+            82.5,
+            0,
+            rng.choice(lines),
+            f"{d}T08:00:00",
+        ]
+        for d in dates
+        for _ in range(8)
+    ]
+    write(
+        "machine.csv",
+        [
+            "Date",
+            "Machine_ID",
+            "Status",
+            "Speed_RPM",
+            "Temperature_C",
+            "Vibration_mm",
+            "Power_Usage_pct",
+            "Downtime_min",
+            "Line",
+            "Created_At",
+        ],
+        mach,
+    )
 
-    work = [[d, w, rng.choice(lines), rng.choice(shifts), 8.0, 80, 1, "Present", 0.5,
-             f"{d}T08:00:00"] for d in dates for w in workers]
-    write("workers.csv",
-          ["Date", "Worker_ID", "Line", "Shift", "Hours_Worked", "Units_Produced",
-           "Defects_Caused", "Attendance", "Overtime_hrs", "Created_At"], work)
+    work = [
+        [d, w, rng.choice(lines), rng.choice(shifts), 8.0, 80, 1, "Present", 0.5, f"{d}T08:00:00"]
+        for d in dates
+        for w in workers
+    ]
+    write(
+        "workers.csv",
+        [
+            "Date",
+            "Worker_ID",
+            "Line",
+            "Shift",
+            "Hours_Worked",
+            "Units_Produced",
+            "Defects_Caused",
+            "Attendance",
+            "Overtime_hrs",
+            "Created_At",
+        ],
+        work,
+    )
 
 
 def _has_data() -> bool:

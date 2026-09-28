@@ -68,7 +68,9 @@ class LocalLLM:
                     self._available = True
                     print(f"✅ Local LLM ready ({self.provider}): {self.model}")
                 else:
-                    print(f"⚠️  Model {self.model} not served at {self.base_url}. Available: {models}")
+                    print(
+                        f"⚠️  Model {self.model} not served at {self.base_url}. Available: {models}"
+                    )
             else:
                 print(f"⚠️  LM Studio not available at {self.base_url}")
         except Exception as e:
@@ -128,7 +130,10 @@ class LocalLLM:
             r = httpx.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
-                headers={"Content-Type": "application/json", "X-Project": "Factory-Data-Automation"},
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Project": "Factory-Data-Automation",
+                },
                 timeout=180,
             )
             if r.status_code == 200:

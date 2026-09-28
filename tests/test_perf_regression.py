@@ -3,15 +3,14 @@
 Compares stage execution latencies against benchmarks/baseline_phase1.json.
 Enforces that offline stages do not regress by more than the defined threshold (+25%).
 """
+
 from __future__ import annotations
 
 import csv
-import glob
 import json
-import os
-import sys
 import time
 from pathlib import Path
+
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -42,7 +41,7 @@ def test_offline_etl_performance_regression():
         t0 = time.perf_counter()
         total_rows = 0
         for p in csv_files:
-            with open(p, "r", encoding="utf-8", errors="replace") as fh:
+            with open(p, encoding="utf-8", errors="replace") as fh:
                 total_rows += sum(1 for _ in csv.reader(fh))
         t1 = time.perf_counter()
         times_ms.append((t1 - t0) * 1000.0)

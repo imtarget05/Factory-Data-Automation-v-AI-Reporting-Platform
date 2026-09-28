@@ -25,13 +25,15 @@ Two design points that are easy to get wrong
    ``tests/test_csv_injection.py`` — prefix a single quote, never drop content,
    so the operator can still read what the bad value was.
 """
+
 from __future__ import annotations
 
 import csv
 import os
 import threading
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Dict, Iterable, List
+from typing import Any
 
 from app.utils.config import DATA_QUARANTINE_FILE
 
@@ -69,14 +71,14 @@ def sanitize_quarantine_cell(value: Any) -> str:
     return s
 
 
-def dedupe_violations(violations: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def dedupe_violations(violations: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collapse a row's repeated failures into one record per (row_index, field).
 
     Without this, a row failing four rules produces four near-identical lines and
     the operator cannot tell how many rows were actually rejected.
     """
     seen = set()
-    unique: List[Dict[str, Any]] = []
+    unique: list[dict[str, Any]] = []
     for v in violations:
         key = (v.get("row_index"), v.get("field"))
         if key in seen:
@@ -86,13 +88,13 @@ def dedupe_violations(violations: Iterable[Dict[str, Any]]) -> List[Dict[str, An
     return unique
 
 
-def rejected_row_indices(violations: Iterable[Dict[str, Any]]) -> set[int]:
+def rejected_row_indices(violations: Iterable[dict[str, Any]]) -> set[int]:
     """Row indexes that must be dropped from the DataFrame before KPI math."""
     return {int(v["row_index"]) for v in violations if v.get("row_index") is not None}
 
 
 def write_quarantine(
-    violations: Iterable[Dict[str, Any]],
+    violations: Iterable[dict[str, Any]],
     dataset: str,
     source_file: str = "",
     path: str = DATA_QUARANTINE_FILE,
@@ -115,26 +117,28 @@ def write_quarantine(
             if is_new:
                 writer.writerow(QUARANTINE_COLUMNS)
             for v in records:
-                writer.writerow([
-                    stamp,
-                    dataset,
-                    os.path.basename(source_file),
-                    v.get("row_index"),
-                    sanitize_quarantine_cell(v.get("field")),
-                    sanitize_quarantine_cell(v.get("value")),
-                    sanitize_quarantine_cell(v.get("rule")),
-                ])
+                writer.writerow(
+                    [
+                        stamp,
+                        dataset,
+                        os.path.basename(source_file),
+                        v.get("row_index"),
+                        sanitize_quarantine_cell(v.get("field")),
+                        sanitize_quarantine_cell(v.get("value")),
+                        sanitize_quarantine_cell(v.get("rule")),
+                    ]
+                )
         return len(records)
     except OSError:
         return 0
 
 
-def quarantine_summary(path: str = DATA_QUARANTINE_FILE) -> Dict[str, int]:
+def quarantine_summary(path: str = DATA_QUARANTINE_FILE) -> dict[str, int]:
     """Count quarantined records per dataset, for the health endpoint/CLI."""
     try:
         if not os.path.exists(path):
             return {}
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         with open(path, newline="", encoding="utf-8") as fh:
             for row in csv.DictReader(fh):
                 dataset = row.get("dataset") or "unknown"

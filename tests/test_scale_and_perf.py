@@ -7,12 +7,14 @@ FDA-017: Performance regression gate. Compares ETL stage execution times against
 
 Contract: docs/qa/QA_ACCEPTANCE.md -> FDA-013, FDA-017.
 """
+
 from __future__ import annotations
 
 import json
 import sys
 import time
 from pathlib import Path
+
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -21,13 +23,13 @@ if str(REPO_ROOT) not in sys.path:
 
 pd = pytest.importorskip("pandas", reason="Scale test needs pandas")
 
-from app.etl.pipeline import clean_dataframe  # noqa: E402
 from app.etl.kpi_engine import calculate_daily_production  # noqa: E402
+from app.etl.pipeline import clean_dataframe  # noqa: E402
 
 
 def test_fda_013_scale_10x_pipeline_survives():
     """FDA-013: 10x scale test on production records (~110k rows).
-    
+
     Verifies memory stability, correct deduplication, clipping, and aggregate completion.
     """
     raw_csv = REPO_ROOT / "data" / "raw" / "production.csv"
@@ -64,14 +66,14 @@ def test_fda_013_scale_10x_pipeline_survives():
 
 def test_fda_017_performance_regression_against_baseline():
     """FDA-017: Performance regression check against baseline_phase1.json.
-    
+
     Ensures current ETL stage latency does not regress beyond 100% threshold of baseline proxy.
     """
     baseline_file = REPO_ROOT / "benchmarks" / "baseline_phase1.json"
     if not baseline_file.exists():
         pytest.skip("benchmarks/baseline_phase1.json missing")
 
-    with open(baseline_file, "r") as f:
+    with open(baseline_file) as f:
         baseline = json.load(f)
 
     baseline_read_ms = baseline.get("etl_proxy", {}).get("stages_ms", {}).get("read_csv_ms")
