@@ -1,5 +1,5 @@
 {
-  "ts": "2026-09-27T15:33:56.646662+00:00",
+  "ts": "2026-09-27T21:41:59.939787+00:00",
   "machine": "macOS-13.7.8-x86_64-i386-64bit-Mach-O",
   "base_url": "http://127.0.0.1:8000",
   "api": {
@@ -11,9 +11,9 @@
     "files": 5,
     "rows": 26119,
     "stages_ms": {
-      "discovery_ms": 0.44,
-      "read_csv_ms": 1167.7,
-      "groupby_ms": 0.01
+      "discovery_ms": 0.53,
+      "read_csv_ms": 1821.09,
+      "groupby_ms": 0.0
     },
     "note": "STDLIB STAGE PROXY \u2014 not API latency"
   }

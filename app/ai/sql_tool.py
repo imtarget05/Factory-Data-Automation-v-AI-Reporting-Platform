@@ -95,6 +95,35 @@ SAMPLE_QUESTIONS: List[Dict[str, Any]] = [
 ]
 
 
+# Statements that can never appear in a read-only spec. The allow-list below
+# already rejects them as "unknown frame/metric", but this explicit guard
+# (FDA-021) makes SELECT-only intent auditable and returns a clear 422
+# message ("forbidden statement") instead of an incidental lookup miss.
+_FORBIDDEN_STATEMENT_KEYWORDS = (
+    "select",
+    "delete",
+    "drop",
+    "insert",
+    "update",
+    "alter",
+    "truncate",
+    "grant",
+    "exec",
+    "union",
+)
+
+
+def _reject_forbidden_statements(value: Any, where: str) -> None:
+    if not isinstance(value, str):
+        return
+    lowered = value.strip().lower()
+    tokens = lowered.replace("(", " ").replace(";", " ").split()
+    if tokens and tokens[0] in _FORBIDDEN_STATEMENT_KEYWORDS:
+        # Keep the allow-list phrasing ("unknown frame/metric ...") so callers
+        # matching on it keep working; append the explicit forbidden reason.
+        raise ValueError(f"unknown {where} {value[:60]!r}; forbidden statement")
+
+
 def _resolve_frames(kpis: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     """Flatten the kpi_engine output into the named frames this tool queries."""
     frames: Dict[str, pd.DataFrame] = {}
@@ -115,12 +144,14 @@ def validate_spec(spec: Dict[str, Any], frames: Dict[str, pd.DataFrame]) -> Dict
     if not isinstance(spec, dict):
         raise ValueError("spec must be an object")
     frame_name = spec.get("frame")
+    _reject_forbidden_statements(frame_name, "frame")
     if frame_name not in frames:
         raise ValueError(f"unknown frame {frame_name!r}; available: {sorted(frames)}")
     frame = frames[frame_name]
     columns = set(frame.columns)
 
     metric = spec.get("metric")
+    _reject_forbidden_statements(metric, "metric")
     if metric not in columns:
         raise ValueError(f"unknown metric {metric!r} for frame {frame_name!r}")
     column = frame[metric]

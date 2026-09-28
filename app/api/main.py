@@ -16,6 +16,8 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from app.api.security import ApiKeyMiddleware
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.ai.marketing import MarketingGenerator
@@ -43,13 +45,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+def _allowed_origins() -> list[str]:
+    raw = os.getenv("FACTORY_CORS_ORIGINS", "http://localhost:8501,http://localhost:3000")
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(ApiKeyMiddleware)
 
 
 # --- Minimal Prometheus helper (additive; zero new dependencies) ----------------
@@ -328,6 +336,57 @@ async def chat(query: str = Query(..., description="Your question about factory 
     response = ai_gen.chat_query(query, context)
 
     return {"query": query, "response": response, "timestamp": datetime.now().isoformat()}
+
+
+# --- FDA-021-025: POST /api/v1/query (additive; no existing route touched) ----
+# Executes a read-only sql_tool JSON spec over the computed KPI frames.
+# Guardrails: validate_spec allow-list (incl. explicit SELECT-only /
+# DELETE/DROP rejection), top_n capped at MAX_ROWS, all spec errors -> 422
+# JSON (never 500 on a bad spec).
+
+
+@app.post("/api/v1/query")
+async def post_query(body: dict):
+    """Run an ad-hoc read-only aggregation spec over the KPI frames.
+
+    Body: either the spec itself or ``{"spec": {...}, "timeout": secs}``.
+    ``timeout`` is clamped to [1, 30]s and bounds only this request's
+    execution; ``top_n`` is capped by ``validate_spec`` at ``MAX_ROWS``.
+    """
+    from app.ai.sql_tool import MAX_ROWS, _resolve_frames, execute_spec
+
+    if not isinstance(body, dict):
+        raise HTTPException(422, "spec must be an object")
+    spec = body.get("spec", body) if "spec" in body or "frame" not in body else body
+    if not isinstance(spec, dict):
+        raise HTTPException(422, "spec must be an object")
+    try:
+        timeout = int(body.get("timeout", 30)) if "spec" in body else 30
+    except (TypeError, ValueError):
+        raise HTTPException(422, "timeout must be an integer")
+    timeout = max(1, min(timeout, 30))
+
+    if _kpis is None:
+        if not refresh_data():
+            raise HTTPException(404, "No data available")
+    frames = _resolve_frames(_kpis)
+    if not frames:
+        raise HTTPException(422, "no KPI frames available")
+
+    import time as _time
+
+    start = _time.time()
+    try:
+        rows = execute_spec(spec, frames)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except Exception as exc:  # never leak a 500 for a bad spec
+        raise HTTPException(422, f"spec failed: {type(exc).__name__}")
+    elapsed = _time.time() - start
+    if elapsed > timeout:
+        raise HTTPException(422, f"query exceeded timeout of {timeout}s")
+    rows = rows[:MAX_ROWS]
+    return {"rows": rows, "count": len(rows), "spec": spec}
 
 
 if __name__ == "__main__":

@@ -153,7 +153,7 @@ API docs at **http://localhost:8000/docs**
 python -m pytest tests/ -v
 ```
 
-Expected: `24 passed`. If `data/raw/` is empty, `tests/conftest.py` generates the
+Expected: `135 passed, 4 skipped`. If `data/raw/` is empty, `tests/conftest.py` generates the
 sample data automatically first, so this command works on a bare clone too.
 
 ---
@@ -227,10 +227,10 @@ FACTORY_NAME=Smart Factory Alpha
 ## 🧪 Test Results | Kết Quả Kiểm Thử
 
 ```
-24 passed in 1.36s
+135 passed, 4 skipped
 ```
 
-All tests pass: ETL pipeline (12 tests) + KPI engine (12 tests).
+All tests pass (4 conditional skips for absent optional deps/data): ETL, KPI engine, quarantine, contracts, query API, SQL tooling, and parity/perf suites (15 test files).
 
 ---
 

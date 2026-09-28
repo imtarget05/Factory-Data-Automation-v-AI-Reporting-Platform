@@ -122,7 +122,7 @@ def test_real_exporter_flags_formulas_when_deps_available():
     pytest.importorskip("dotenv")
     import sys
     from pathlib import Path
-    sys.insert(0, str(Path(__file__).resolve().parents[1]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from app.reports.exporter import ReportExporter  # noqa: E402
     assert hasattr(ReportExporter, "export_to_excel")
     assert hasattr(ReportExporter, "export_to_pdf")

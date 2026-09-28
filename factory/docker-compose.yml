@@ -1,4 +1,7 @@
-version: '3.8'
+# Cluster: factory — Factory Data Automation + AI Reporting.
+# Quản trị theo cụm: xem scripts/docker-clusters.sh + docs/docker-clusters.md
+# Shared infra: network portfolio-net (external) dùng chung cross-cluster khi cần.
+name: factory
 
 services:
   dashboard:
@@ -16,6 +19,9 @@ services:
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
     command: streamlit run app/dashboard/run.py --server.port=8501 --server.address=0.0.0.0
     restart: unless-stopped
+    networks:
+      - default
+      - portfolio-net
 
   api:
     container_name: factory-api
@@ -31,3 +37,11 @@ services:
     # /app on every boot; the reloader watches /app and would reboot forever.
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --workers 1
     restart: unless-stopped
+    networks:
+      - default
+      - portfolio-net
+
+networks:
+  portfolio-net:
+    external: true
+    name: portfolio-net

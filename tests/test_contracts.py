@@ -170,6 +170,19 @@ def test_blank_and_none_required_fields_are_violations():
     assert any(v["field"] == "Target_Qty" for v in report.violations)
 
 
+def test_missing_mandatory_columns_are_violations_not_crash():
+    """FDA-004: a row missing mandatory columns must yield violations, never raise."""
+    row = _production_row()
+    for missing in ("Actual_Qty", "Good_Qty", "Machine_ID"):
+        partial = {k: v for k, v in row.items() if k != missing}
+        report = validate_rows("production", [partial])
+        assert report.passed == [], missing
+        assert any(
+            v["field"] == missing and "required" in v["rule"].lower()
+            for v in report.violations
+        ), (missing, report.violations)
+
+
 def test_defect_count_above_inspected_qty_is_violation():
     report = validate_rows(
         "quality", [_quality_row(Defect_Count=250, Inspected_Qty=200)]
