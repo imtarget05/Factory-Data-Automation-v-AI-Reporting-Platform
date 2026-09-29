@@ -1,0 +1,52 @@
+# Loại khỏi build context. Mỗi dòng đều là một lý do cụ thể, không phải
+# "cho gọn".
+#
+# .env / secrets: KHÔNG BAO GIỜ được đưa vào image. Nếu file này không ở
+# đây, một lần commit nhầm .env là secret nằm trong image và trong registry
+# vĩnh viễn — xoá image không xoá được lịch sử pull.
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# VCS và CI
+.git
+.github
+.gitignore
+
+# Test & docs: không ảnh hưởng runtime
+tests/
+docs/
+*.md
+!README.md
+
+# Dữ liệu sinh ra cục bộ, không phải dữ liệu nguồn. `data/raw` là dữ liệu
+# vào và PHẢI có trong image — nên chỉ loại các thư mục output.
+data/processed/
+data/gold/
+data/marts/
+data/catalog/
+data/quarantine/
+data/exports/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Toolchain không dùng lúc runtime
+.gitignore
+Dockerfile*
+docker-compose*.yml
+
+# File OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

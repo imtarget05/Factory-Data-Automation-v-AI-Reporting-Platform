@@ -1,0 +1,20 @@
+# Dependencies tối thiểu cho Factory API (`app.api.main:app`).
+#
+# KHÔNG phải requirements.txt của repo — file đó dành cho toàn bộ ứng dụng
+# gồm dashboard Streamlit, report generator và test-data generator, những thứ
+# API không dùng đến. Ở đây chỉ những gì API thực sự import.
+#
+# Danh sách được lấy từ trace import của app.api.main, không đoán: httpx và
+# reportlab xuất hiện vì app.ai.marketing và app.ai.reporting được import
+# transitively, và thiếu chúng thì container không khởi động được.
+pandas>=2.0.0
+polars>=1.0.0
+pyarrow>=15.0.0
+openpyxl>=3.1.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+httpx>=0.25.0
+reportlab>=4.0.0

@@ -1,0 +1,111 @@
+name: Build and Publish API Image to GHCR
+
+# Mục đích: build ảnh container TRÊN GITHUB, không phải trên laptop.
+# Ảnh 875MB build local tiêu thụ CPU và nhiệt; build ở đây là miễn phí và
+# cho cùng kết quả mọi lần.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'data/raw/**'
+      - 'Dockerfile.api'
+      - 'requirements.api.txt'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: factory-api
+
+jobs:
+  build:
+    name: Build, smoke-test, push to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Cần để push package lên GHCR. `packages: write` là quyền tối thiểu;
+      # không cần và không xin `write-all`.
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        # Tag CANONICAL là commit SHA, không phải `latest`.
+        #
+        # Lý do: `latest` là mutable. Evidence ghi "image X chạy trên Azure"
+        # chỉ có nghĩa nếu sau này vẫn xác định được chính xác image đó.
+        # Với tag là SHA, người đọc evidence có thể tự pull lại đúng thứ
+        # đã được kiểm chứng.
+        id: meta
+        run: |
+          SHA="${GITHUB_SHA}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "tag=${IMAGE_NAME}:${SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # GITHUB_TOKEN là token tạm, tự động hết hạn khi job kết thúc.
+          # Không có PAT nào được lưu ở đây — đó là điểm.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          push: true
+          tags: ${{ steps.meta.outputs.tag }}
+          # Ghi digest ra log. Digest, không phải tag, là thứ định danh
+          # NỘI DUNG ảnh — tag có thể bị ghi đè lên.
+          #
+          # KHÔNG dùng `push-by-digest` ở đây: nó dành cho build ma trận
+          # multi-arch, và khi bật nó thì `tags:` bị bỏ qua — ảnh sẽ không
+          # có tag nào để pull. Ở đây chỉ một kiến trúc, nên tag + digest
+          # là đủ và đúng.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          labels: |
+            org.opencontainers.image.title=${{ env.IMAGE_NAME }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Export provenance metadata
+        id: meta-only
+        run: |
+          mkdir -p /tmp/meta
+          cat > /tmp/meta/image-evidence.json <<EOF
+          {
+            "registry": "${{ env.REGISTRY }}",
+            "repository": "${{ steps.meta.outputs.image }}",
+            "tag": "${{ steps.meta.outputs.tag }}",
+            "digest": "${{ steps.build.outputs.digest }}",
+            "source_commit": "${{ steps.meta.outputs.sha }}",
+            "build_location": "GitHub Actions",
+            "workflow_run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          }
+          EOF
+          cat /tmp/meta/image-evidence.json
+
+      - name: Commit image evidence
+        # Evidence nằm trong repo để nó được review cùng code, thay vì nằm
+        # rải rác trong log của Actions.
+        run: |
+          mkdir -p docs/evidence/images
+          cp /tmp/meta/image-evidence.json docs/evidence/images/factory-api.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/evidence/images/factory-api.json
+          # `|| true`: nếu workflow chạy lại trên cùng SHA thì không có gì
+          # để commit, và đó không phải lỗi build.
+          git diff --cached --quiet || git commit -m "chore: record image digest for ${{ steps.meta.outputs.sha }}"
+          git push || echo "push skipped (no new commit)"
