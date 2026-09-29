@@ -26,6 +26,11 @@ jobs:
       # Cần để push package lên GHCR. `packages: write` là quyền tối thiểu;
       # không cần và không xin `write-all`.
       packages: write
+      # GATE 7 — `attestations: write` để ký provenance, `id-token: write` để
+      # lấy OIDC token mà Sigstore dùng để ký. Cả hai đều là quyền HẸP, không
+      # phải `write-all`; thiếu chúng thì job attestation fail rõ ràng.
+      attestations: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -127,3 +132,44 @@ jobs:
           # để commit, và đó không phải lỗi build.
           git diff --cached --quiet || git commit -m "chore: record image digest for ${{ steps.meta.outputs.sha }}"
           git push || echo "push skipped (no new commit)"
+
+      # ------------------------------------------------------------ GATE 7
+      # Supply-chain security: SBOM + build provenance attestation.
+      #
+      # Mục tiêu KHÔNG phải "có file SBOM", mà là chứng minh được ảnh đang
+      # chạy trên Azure được build từ đúng commit nào. Chuỗi bằng chứng:
+      #   commit -> workflow run -> image digest -> Azure revision
+      # `gh attestation verify` kiểm subject digest có khớp ảnh thật không.
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.meta.outputs.tag }}
+          format: spdx-json
+          artifact-name: sbom.spdx.json
+          output-file: /tmp/sbom.spdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.meta.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ steps.meta.outputs.sha }}
+          path: /tmp/sbom.spdx.json
+          if-no-files-found: error
+
+      - name: Verify attestation matches the pushed digest
+        # Tự kiểm ngay trong workflow: nếu attestation không verify được với
+        # digest vừa push, job fail — bằng chứng rỗng không được commit.
+        run: |
+          set -euo pipefail
+          gh attestation verify "oci://${{ steps.meta.outputs.tag }}" \
+            --repo "${{ github.repository }}" --format json > /tmp/att.json
+          echo "attestation verified for ${{ steps.build.outputs.digest }}"
+          head -c 400 /tmp/att.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
