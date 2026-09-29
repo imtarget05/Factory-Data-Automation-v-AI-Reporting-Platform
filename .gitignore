@@ -9,6 +9,10 @@ venv/
 .venv/
 
 # Data
+data/silver/*
+data/gold/*
+data/marts/*
+data/catalog/*
 data/raw/*
 data/processed/*
 data/exports/*
