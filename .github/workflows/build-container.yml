@@ -38,12 +38,25 @@ jobs:
         # chỉ có nghĩa nếu sau này vẫn xác định được chính xác image đó.
         # Với tag là SHA, người đọc evidence có thể tự pull lại đúng thứ
         # đã được kiểm chứng.
+        #
+        # QUAN TRỌNG: tên ảnh PHẢI có namespace `GITHUB_REPOSITORY_OWNER`.
+        # Thiếu nó, `ghcr.io/factory-api:tag` được hiểu là ẢNH TRÊN DOCKER
+        # HUB, và Docker Hub sẽ trả 401 vì GITHUB_TOKEN không có quyền đó —
+        # lỗi trông giống hỏng quyền GHCR nhưng thực ra là gửi nhầm registry.
         id: meta
         run: |
+          set -euo pipefail
           SHA="${GITHUB_SHA}"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "tag=${IMAGE_NAME}:${SHA}" >> "$GITHUB_OUTPUT"
-          echo "image=${REGISTRY}/${GITHUB_REPOSITORY_OWNER}/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          REPO="${GITHUB_REPOSITORY#*/}"
+          IMAGE="${REGISTRY}/${OWNER}/${REPO}-${IMAGE_NAME}"
+          echo "sha=${SHA}"      >> "$GITHUB_OUTPUT"
+          echo "owner=${OWNER}"  >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE}"  >> "$GITHUB_OUTPUT"
+          echo "tag=${IMAGE}:${SHA}" >> "$GITHUB_OUTPUT"
+          # Ghi lại giá trị thực sự dùng, không suy ra lại từ biến khác —
+          # nếu hai chỗ lệch nhau thì bằng chứng sẽ ghi sai registry.
+          echo "Resolved: ${IMAGE}:${SHA}"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
