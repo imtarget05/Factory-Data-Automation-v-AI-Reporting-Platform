@@ -1,0 +1,15 @@
+{
+  "registry": "ghcr.io",
+  "repository": "ghcr.io/imtarget05/factory-data-automation-v-ai-reporting-platform-factory-api",
+  "tag": "ghcr.io/imtarget05/factory-data-automation-v-ai-reporting-platform-factory-api:12016c28c65665f8b4876ed543df26368395bb05",
+  "digest": "sha256:e41613d42d4891e4930f79523f93f81bbc7632584ec65e36ab055f41a800b41e",
+  "source_commit": "12016c28c65665f8b4876ed543df26368395bb05",
+  "build_location": "GitHub Actions",
+  "workflow_run": "https://github.com/imtarget05/Factory-Data-Automation-v-AI-Reporting-Platform/actions/runs/36590697106",
+  "visibility": "public",
+  "dockerfile": "Dockerfile.api",
+  "notes": [
+    "Image name is lowercased because the OCI repository rule rejects mixed case; the GitHub repo name is Factory-Data-Automation-v-AI-Reporting-Platform.",
+    "Tag is the commit SHA, not latest, so this evidence stays reproducible after later commits."
+  ]
+}
