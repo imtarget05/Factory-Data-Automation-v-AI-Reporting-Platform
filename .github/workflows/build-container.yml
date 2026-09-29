@@ -49,7 +49,12 @@ jobs:
           SHA="${GITHUB_SHA}"
           OWNER="${GITHUB_REPOSITORY_OWNER}"
           REPO="${GITHUB_REPOSITORY#*/}"
-          IMAGE="${REGISTRY}/${OWNER}/${REPO}-${IMAGE_NAME}"
+          # OCI repository name phải LOWERCASE. Tên repo GitHub có hoa/thường
+          # (`Factory-Data-Automation-...`), và việc giữ nguyên sẽ bị registry
+          # từ chối với "repository name must be lowercase" — lỗi ở tầng
+          # reference, không phải ở quyền hay ở build.
+          REPO_LC="$(printf '%s' "${REPO}" | tr '[:upper:]' '[:lower:]')"
+          IMAGE="${REGISTRY}/${OWNER}/${REPO_LC}-${IMAGE_NAME}"
           echo "sha=${SHA}"      >> "$GITHUB_OUTPUT"
           echo "owner=${OWNER}"  >> "$GITHUB_OUTPUT"
           echo "image=${IMAGE}"  >> "$GITHUB_OUTPUT"
