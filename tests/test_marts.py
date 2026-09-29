@@ -192,4 +192,5 @@ def test_null_handling_in_sqlite(tmp_path, marts):
 
 
 def test_mart_row_count_returns_minus_one_for_missing_table(tmp_path, marts):
-    db = write_sqlite(marts, str(tmp_path / "m.db"))
+    # Chỉ cần file tồn tại với schema rỗng; giá trị trả về là điều kiện.
+    write_sqlite(marts, str(tmp_path / "m.db"))

@@ -9,7 +9,6 @@ import json
 
 import pytest
 
-from app.catalog.lineage import Lineage, LineageError
 from app.catalog.registry import ZONE_ORDER, Catalog, CatalogError, seed_default_catalog
 
 
@@ -97,7 +96,8 @@ def test_schema_persists_through_dict_roundtrip(cat):
 def test_serialization_is_deterministic(cat):
     a = json.loads(cat.serialize())
     b = json.loads(cat.serialize())
-    a.pop("generated_at"); b.pop("generated_at")
+    a.pop("generated_at")
+    b.pop("generated_at")
     assert a == b
     assert a["zone_order"] == list(ZONE_ORDER)
 

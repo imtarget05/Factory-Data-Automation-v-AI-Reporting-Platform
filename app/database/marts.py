@@ -14,11 +14,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import Any
 
 import pandas as pd
-
-from app.etl.gold import GoldContractError
 
 MARTS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),

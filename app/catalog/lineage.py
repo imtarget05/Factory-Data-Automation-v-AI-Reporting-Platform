@@ -138,26 +138,29 @@ class Lineage:
 
     def _find_cycle(self) -> list[str] | None:
         """DFS có màu để phát hiện cycle trong graph đã có."""
-        WHITE, GREY, BLACK = 0, 1, 2
+        white, grey, black = 0, 1, 2
         color: dict[str, int] = {}
+        # Tên hằng trong hàm: ruff N806 muốn lowercase. Hằng số thật sự
+        # nên nằm ở module scope, nhưng chúng chỉ có ý nghĩa trong DFS này
+        # nên giữ cục bộ và dùng chữ thường cho đúng quy ước.
 
         def visit(node: str, path: list[str]):
-            color[node] = GREY
+            color[node] = grey
             path.append(node)
             for nxt in self.downstream(node):
-                c = color.get(nxt, WHITE)
-                if c == GREY:
+                c = color.get(nxt, white)
+                if c == grey:
                     return path[path.index(nxt):] + [nxt]
-                if c == WHITE:
+                if c == white:
                     found = visit(nxt, path)
                     if found:
                         return found
             path.pop()
-            color[node] = BLACK
+            color[node] = black
             return None
 
         for node in sorted(self._edges):
-            if color.get(node, WHITE) == WHITE:
+            if color.get(node, white) == white:
                 found = visit(node, [])
                 if found:
                     return found

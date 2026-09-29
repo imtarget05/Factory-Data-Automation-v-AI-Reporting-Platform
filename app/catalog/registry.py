@@ -77,7 +77,7 @@ class DatasetEntry:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "DatasetEntry":
+    def from_dict(cls, d: dict) -> DatasetEntry:
         return cls(**d)
 
     def update(self, **kw: Any) -> None:

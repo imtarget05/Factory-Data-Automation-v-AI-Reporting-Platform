@@ -17,12 +17,12 @@ from app.etl.gold import GOLD_DATASETS
 
 @pytest.fixture
 def lin() -> Lineage:
-    l = Lineage(path="/dev/null")
-    l.add_edge("raw_production", "silver_production", "etl", run_id="r1")
-    l.add_edge("silver_production", "oee_daily", "kpi_aggregate", run_id="r1")
-    l.add_edge("silver_production", "quality_daily", "defect_rollup", run_id="r1")
-    l.add_edge("oee_daily", "mart_oee", "materialize", run_id="r2")
-    return l
+    lg = Lineage(path="/dev/null")
+    lg.add_edge("raw_production", "silver_production", "etl", run_id="r1")
+    lg.add_edge("silver_production", "oee_daily", "kpi_aggregate", run_id="r1")
+    lg.add_edge("silver_production", "quality_daily", "defect_rollup", run_id="r1")
+    lg.add_edge("oee_daily", "mart_oee", "materialize", run_id="r2")
+    return lg
 
 
 # ==========================================================================
@@ -124,18 +124,21 @@ def test_same_pair_different_transform_is_new_edge(lin):
 
 def test_build_from_catalog_is_idempotent():
     cat = seed_default_catalog()
-    a = Lineage(path="/dev/null"); a.build_from_catalog(cat)
+    a = Lineage(path="/dev/null")
+    a.build_from_catalog(cat)
     n = len(a)
-    b = Lineage(path="/dev/null"); b.build_from_catalog(cat)
+    b = Lineage(path="/dev/null")
+    b.build_from_catalog(cat)
     assert len(b) == n, "build lại phải cho cùng số edge"
 
 
 def test_build_from_catalog_matches_raw_silver_gold():
     cat = seed_default_catalog()
-    l = Lineage(path="/dev/null"); l.build_from_catalog(cat)
-    assert l.downstream("raw_production") == ["silver_production"]
-    assert sorted(l.downstream("silver_production")) == sorted(GOLD_DATASETS)
-    assert not l.has_cycle()
+    lg = Lineage(path="/dev/null")
+    lg.build_from_catalog(cat)
+    assert lg.downstream("raw_production") == ["silver_production"]
+    assert sorted(lg.downstream("silver_production")) == sorted(GOLD_DATASETS)
+    assert not lg.has_cycle()
 
 
 def test_catalog_gold_names_match_gold_module_exactly():
@@ -157,12 +160,12 @@ def test_full_chain_raw_to_mart_is_connected():
     from app.database.marts import register_marts_in_catalog
 
     cat = seed_default_catalog()
-    l = Lineage(path="/dev/null")
-    l.build_from_catalog(cat)
-    register_marts_in_catalog(cat, l)
-    assert l.upstream("mart_oee") == ["oee_daily"]
-    assert "raw_production" in l.ancestors("mart_oee")
-    assert "mart_oee" in l.descendants("raw_production")
+    lg = Lineage(path="/dev/null")
+    lg.build_from_catalog(cat)
+    register_marts_in_catalog(cat, lg)
+    assert lg.upstream("mart_oee") == ["oee_daily"]
+    assert "raw_production" in lg.ancestors("mart_oee")
+    assert "mart_oee" in lg.descendants("raw_production")
 
 
 # ==========================================================================
@@ -171,7 +174,8 @@ def test_full_chain_raw_to_mart_is_connected():
 def test_serialization_is_deterministic(lin):
     a = json.loads(lin.serialize())
     b = json.loads(lin.serialize())
-    a.pop("generated_at"); b.pop("generated_at")
+    a.pop("generated_at")
+    b.pop("generated_at")
     assert a == b
 
 
