@@ -8,6 +8,7 @@ Nguyên tắc được bảo vệ:
     * Deterministic: thứ tự dòng ổn định
     * Không mất dữ liệu âm thầm
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -27,65 +28,79 @@ from app.etl.gold import (
 
 @pytest.fixture
 def production() -> pd.DataFrame:
-    return pd.DataFrame({
-        "Date": ["2026-01-01", "2026-01-01", "2026-01-02"],
-        "Line": ["L1", "L1", "L2"],
-        "Shift": ["A", "B", "A"],
-        "Product": ["P1", "P1", "P2"],
-        "Machine_ID": ["M1", "M2", "M3"],
-        "Worker_ID": ["W1", "W2", "W1"],
-        "Target_Qty": [100, 100, 50],
-        "Actual_Qty": [90, 80, 60],
-        "Good_Qty": [88, 76, 55],
-        "Reject_Qty": [2, 4, 5],
-        "Cycle_Time_sec": [12.0, 14.0, 11.0],
-    })
+    return pd.DataFrame(
+        {
+            "Date": ["2026-01-01", "2026-01-01", "2026-01-02"],
+            "Line": ["L1", "L1", "L2"],
+            "Shift": ["A", "B", "A"],
+            "Product": ["P1", "P1", "P2"],
+            "Machine_ID": ["M1", "M2", "M3"],
+            "Worker_ID": ["W1", "W2", "W1"],
+            "Target_Qty": [100, 100, 50],
+            "Actual_Qty": [90, 80, 60],
+            "Good_Qty": [88, 76, 55],
+            "Reject_Qty": [2, 4, 5],
+            "Cycle_Time_sec": [12.0, 14.0, 11.0],
+        }
+    )
 
 
 @pytest.fixture
 def quality() -> pd.DataFrame:
-    return pd.DataFrame({
-        "Date": ["2026-01-01", "2026-01-02"],
-        "Product": ["P1", "P2"],
-        "Line": ["L1", "L2"],
-        "Defect_Type": ["Scratch", "Crack"],
-        "Defect_Count": [3, 2],
-        "Inspected_Qty": [100, 50],
-        "Severity": ["Minor", "Major"],
-        "Inspector_ID": ["I1", "I2"],
-    })
+    return pd.DataFrame(
+        {
+            "Date": ["2026-01-01", "2026-01-02"],
+            "Product": ["P1", "P2"],
+            "Line": ["L1", "L2"],
+            "Defect_Type": ["Scratch", "Crack"],
+            "Defect_Count": [3, 2],
+            "Inspected_Qty": [100, 50],
+            "Severity": ["Minor", "Major"],
+            "Inspector_ID": ["I1", "I2"],
+        }
+    )
 
 
 @pytest.fixture
 def inventory() -> pd.DataFrame:
-    return pd.DataFrame({
-        "Date": ["2026-01-01", "2026-01-02", "2026-01-02"],
-        "Product": ["P1", "P2", "P3"],
-        "Stock_Qty": [50, 5, 0],
-        "Reorder_Point": [20, 10, 5],
-        "Max_Capacity": [100, 100, 100],
-        "Unit_Price": [10.0, 20.0, 30.0],
-        "Supplier": ["S1", "S2", "S3"],
-    })
+    return pd.DataFrame(
+        {
+            "Date": ["2026-01-01", "2026-01-02", "2026-01-02"],
+            "Product": ["P1", "P2", "P3"],
+            "Stock_Qty": [50, 5, 0],
+            "Reorder_Point": [20, 10, 5],
+            "Max_Capacity": [100, 100, 100],
+            "Unit_Price": [10.0, 20.0, 30.0],
+            "Supplier": ["S1", "S2", "S3"],
+        }
+    )
 
 
 @pytest.fixture
 def machine() -> pd.DataFrame:
-    return pd.DataFrame({
-        "Date": ["2026-01-01", "2026-01-01"],
-        "Machine_ID": ["M1", "M2"],
-        "Status": ["RUN", "DOWN"],
-        "Temperature_C": [60.0, 85.0],
-        "Vibration_mm": [2.0, 5.0],
-        "Downtime_min": [0, 30],
-        "Line": ["L1", "L2"],
-    })
+    return pd.DataFrame(
+        {
+            "Date": ["2026-01-01", "2026-01-01"],
+            "Machine_ID": ["M1", "M2"],
+            "Status": ["RUN", "DOWN"],
+            "Temperature_C": [60.0, 85.0],
+            "Vibration_mm": [2.0, 5.0],
+            "Downtime_min": [0, 30],
+            "Line": ["L1", "L2"],
+        }
+    )
 
 
 @pytest.fixture
 def silver(production, quality, inventory, machine) -> dict:
-    return {"production": production, "quality": quality,
-            "inventory": inventory, "machine": machine}
+    return {
+        "production": production,
+        "quality": quality,
+        "inventory": inventory,
+        "machine": machine,
+    }
+
+
 # Schema + cấu trúc
 # --------------------------------------------------------------------------
 def test_build_gold_returns_all_four(silver):
@@ -107,12 +122,15 @@ def test_gold_does_not_read_raw(silver):
         build_gold({"production": silver["production"]})
 
 
-@pytest.mark.parametrize("dataset,required", [
-    ("production", "Good_Qty"),
-    ("quality", "Severity"),
-    ("inventory", "Reorder_Point"),
-    ("machine", "Vibration_mm"),
-])
+@pytest.mark.parametrize(
+    "dataset,required",
+    [
+        ("production", "Good_Qty"),
+        ("quality", "Severity"),
+        ("inventory", "Reorder_Point"),
+        ("machine", "Vibration_mm"),
+    ],
+)
 def test_missing_required_column_raises_not_silently(silver, dataset, required):
     """Thiếu cột bắt buộc → raise. KHÔNG tạo bảng rỗng im lặng."""
     broken = {k: v.copy() for k, v in silver.items()}
@@ -132,7 +150,7 @@ def test_oee_daily_aggregation_is_correct(production):
     assert first["Total_Good"] == 164
     assert first["Total_Reject"] == 6
     assert first["Machine_Count"] == 2
-    assert first["Quality_pct"] == pytest.approx(96.47, abs=0.01)     # 164/170
+    assert first["Quality_pct"] == pytest.approx(96.47, abs=0.01)  # 164/170
     assert first["Performance_pct"] == pytest.approx(85.0, abs=0.01)  # 170/200
 
 
@@ -198,9 +216,11 @@ def test_export_gold_manifest_is_machine_readable(silver, tmp_path):
 # --------------------------------------------------------------------------
 def test_no_silent_row_loss_gold_covers_all_input_dates(silver):
     """Mỗi ngày có trong silver phải xuất hiện trong gold tương ứng."""
-    for src, builder in [("production", build_oee_daily),
-                        ("quality", build_quality_daily),
-                        ("machine", build_machine_health)]:
+    for src, builder in [
+        ("production", build_oee_daily),
+        ("quality", build_quality_daily),
+        ("machine", build_machine_health),
+    ]:
         out = builder(silver[src])
         src_dates = set(pd.to_datetime(silver[src]["Date"]).dropna())
         out_dates = set(pd.to_datetime(out["Date"]))

@@ -20,7 +20,9 @@ from app.catalog.registry import ZONE_ORDER, Catalog
 
 DEFAULT_LINEAGE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "catalog", "lineage.json",
+    "data",
+    "catalog",
+    "lineage.json",
 )
 
 
@@ -47,8 +49,7 @@ class Lineage:
             self.load()
 
     # -- ghi --------------------------------------------------------------
-    def add_edge(self, source: str, target: str, transform: str,
-                 run_id: str | None = None) -> dict:
+    def add_edge(self, source: str, target: str, transform: str, run_id: str | None = None) -> dict:
         """
         Thêm edge source -> target.
 
@@ -60,8 +61,7 @@ class Lineage:
         if source == target:
             raise LineageError(f"tự vòng: {source} -> {target}")
         if self._reaches(source, target):
-            raise LineageError(
-                f"edge tạo cycle: {source} -> {target} (đã có đường đi ngược lại)")
+            raise LineageError(f"edge tạo cycle: {source} -> {target} (đã có đường đi ngược lại)")
 
         for e in self._edges.get(source, []):
             if e["target_dataset"] == target and e["transform"] == transform:
@@ -95,9 +95,14 @@ class Lineage:
     # -- đọc --------------------------------------------------------------
     def upstream(self, dataset: str) -> list[str]:
         """Dataset nào tạo ra dataset này (trực tiếp)."""
-        return sorted({e["source_dataset"]
-                       for es in self._edges.values() for e in es
-                       if e["target_dataset"] == dataset})
+        return sorted(
+            {
+                e["source_dataset"]
+                for es in self._edges.values()
+                for e in es
+                if e["target_dataset"] == dataset
+            }
+        )
 
     def downstream(self, dataset: str) -> list[str]:
         """Dataset này tạo ra dataset nào (trực tiếp)."""
@@ -150,7 +155,7 @@ class Lineage:
             for nxt in self.downstream(node):
                 c = color.get(nxt, white)
                 if c == grey:
-                    return path[path.index(nxt):] + [nxt]
+                    return path[path.index(nxt) :] + [nxt]
                 if c == white:
                     found = visit(nxt, path)
                     if found:

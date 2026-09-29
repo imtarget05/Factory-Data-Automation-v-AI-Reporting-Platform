@@ -3,6 +3,7 @@ Test Marts — tầng BI dựng trên Gold.
 
 Kiểm bằng SQL thật trên SQLite, không chỉ kiểm DataFrame trong RAM.
 """
+
 from __future__ import annotations
 
 import pandas as pd
@@ -22,33 +23,56 @@ from app.etl.gold import build_gold
 
 @pytest.fixture
 def gold() -> dict:
-    return build_gold({
-        "production": pd.DataFrame({
-            "Date": ["2026-01-01", "2026-01-01", "2026-01-02"],
-            "Line": ["L1", "L1", "L2"], "Shift": ["A", "B", "A"],
-            "Machine_ID": ["M1", "M2", "M3"],
-            "Target_Qty": [100, 100, 50], "Actual_Qty": [90, 80, 60],
-            "Good_Qty": [88, 76, 55], "Reject_Qty": [2, 4, 5],
-            "Cycle_Time_sec": [12.0, 14.0, 11.0],
-        }),
-        "quality": pd.DataFrame({
-            "Date": ["2026-01-01", "2026-01-02"], "Product": ["P1", "P2"],
-            "Line": ["L1", "L2"], "Defect_Type": ["Scratch", "Crack"],
-            "Defect_Count": [3, 2], "Inspected_Qty": [100, 50],
-            "Severity": ["Minor", "Major"],
-        }),
-        "inventory": pd.DataFrame({
-            "Date": ["2026-01-02", "2026-01-02"],
-            "Product": ["P1", "P2"], "Stock_Qty": [50, 5],
-            "Reorder_Point": [20, 10], "Max_Capacity": [100, 100],
-            "Unit_Price": [10.0, 20.0], "Supplier": ["S1", "S2"],
-        }),
-        "machine": pd.DataFrame({
-            "Date": ["2026-01-01"], "Machine_ID": ["M1"], "Status": ["RUN"],
-            "Temperature_C": [60.0], "Vibration_mm": [2.0],
-            "Downtime_min": [0], "Line": ["L1"],
-        }),
-    })
+    return build_gold(
+        {
+            "production": pd.DataFrame(
+                {
+                    "Date": ["2026-01-01", "2026-01-01", "2026-01-02"],
+                    "Line": ["L1", "L1", "L2"],
+                    "Shift": ["A", "B", "A"],
+                    "Machine_ID": ["M1", "M2", "M3"],
+                    "Target_Qty": [100, 100, 50],
+                    "Actual_Qty": [90, 80, 60],
+                    "Good_Qty": [88, 76, 55],
+                    "Reject_Qty": [2, 4, 5],
+                    "Cycle_Time_sec": [12.0, 14.0, 11.0],
+                }
+            ),
+            "quality": pd.DataFrame(
+                {
+                    "Date": ["2026-01-01", "2026-01-02"],
+                    "Product": ["P1", "P2"],
+                    "Line": ["L1", "L2"],
+                    "Defect_Type": ["Scratch", "Crack"],
+                    "Defect_Count": [3, 2],
+                    "Inspected_Qty": [100, 50],
+                    "Severity": ["Minor", "Major"],
+                }
+            ),
+            "inventory": pd.DataFrame(
+                {
+                    "Date": ["2026-01-02", "2026-01-02"],
+                    "Product": ["P1", "P2"],
+                    "Stock_Qty": [50, 5],
+                    "Reorder_Point": [20, 10],
+                    "Max_Capacity": [100, 100],
+                    "Unit_Price": [10.0, 20.0],
+                    "Supplier": ["S1", "S2"],
+                }
+            ),
+            "machine": pd.DataFrame(
+                {
+                    "Date": ["2026-01-01"],
+                    "Machine_ID": ["M1"],
+                    "Status": ["RUN"],
+                    "Temperature_C": [60.0],
+                    "Vibration_mm": [2.0],
+                    "Downtime_min": [0],
+                    "Line": ["L1"],
+                }
+            ),
+        }
+    )
 
 
 @pytest.fixture
@@ -72,10 +96,16 @@ def test_marts_consume_gold_not_raw(gold, marts):
 
 def test_mart_dimensions_are_correct(marts):
     assert list(marts["mart_oee"].columns) == [
-        "Date", "Total_Target", "Total_Actual", "Total_Good", "Total_Reject",
-        "Quality_pct", "Performance_pct", "OEE_pct"]
-    assert {"Product", "Stock_Qty", "Stock_Status"} <= set(
-        marts["mart_inventory"].columns)
+        "Date",
+        "Total_Target",
+        "Total_Actual",
+        "Total_Good",
+        "Total_Reject",
+        "Quality_pct",
+        "Performance_pct",
+        "OEE_pct",
+    ]
+    assert {"Product", "Stock_Qty", "Stock_Status"} <= set(marts["mart_inventory"].columns)
 
 
 # ==========================================================================
@@ -101,12 +131,14 @@ def test_grain_violation_is_detected_when_duplicated(gold):
 # Aggregation — mart không đổi ngữ nghĩa số liệu
 # ==========================================================================
 def test_mart_values_match_gold_exactly(gold, marts):
-    assert marts["mart_oee"]["Total_Actual"].sum() == \
-        gold["oee_daily"]["Total_Actual"].sum()
-    assert marts["mart_quality"]["Total_Defects"].sum() == \
-        gold["quality_daily"]["Total_Defects"].sum()
-    assert marts["mart_inventory"]["Stock_Value"].sum() == \
-        gold["inventory_snapshot"]["Stock_Value"].sum()
+    assert marts["mart_oee"]["Total_Actual"].sum() == gold["oee_daily"]["Total_Actual"].sum()
+    assert (
+        marts["mart_quality"]["Total_Defects"].sum() == gold["quality_daily"]["Total_Defects"].sum()
+    )
+    assert (
+        marts["mart_inventory"]["Stock_Value"].sum()
+        == gold["inventory_snapshot"]["Stock_Value"].sum()
+    )
 
 
 def test_marts_are_deterministic(gold):

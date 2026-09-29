@@ -22,7 +22,9 @@ ZONE_ORDER = ("RAW", "SILVER", "GOLD", "MART")
 
 DEFAULT_CATALOG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "catalog", "catalog.json",
+    "data",
+    "catalog",
+    "catalog.json",
 )
 
 REQUIRED_FIELDS = ("name", "description", "owner", "zone", "source", "version")
@@ -43,17 +45,26 @@ def _now() -> str:
 class DatasetEntry:
     """Một dataset trong catalog."""
 
-    __slots__ = ("name", "description", "owner", "schema", "zone", "source",
-                 "consumers", "freshness_sla_hours", "version",
-                 "created_at", "updated_at")
+    __slots__ = (
+        "name",
+        "description",
+        "owner",
+        "schema",
+        "zone",
+        "source",
+        "consumers",
+        "freshness_sla_hours",
+        "version",
+        "created_at",
+        "updated_at",
+    )
 
     def __init__(self, **kw: Any) -> None:
         for f in REQUIRED_FIELDS:
             if f not in kw or kw[f] in (None, ""):
                 raise CatalogError(f"thiếu trường bắt buộc: {f}")
         if kw["zone"] not in ZONE_ORDER:
-            raise CatalogError(
-                f"zone '{kw['zone']}' không hợp lệ — chỉ chấp nhận {ZONE_ORDER}")
+            raise CatalogError(f"zone '{kw['zone']}' không hợp lệ — chỉ chấp nhận {ZONE_ORDER}")
         self.name = str(kw["name"])
         self.description = str(kw["description"])
         self.owner = str(kw["owner"])
@@ -68,12 +79,17 @@ class DatasetEntry:
 
     def to_dict(self) -> dict:
         return {
-            "name": self.name, "description": self.description,
-            "owner": self.owner, "schema": self.schema, "zone": self.zone,
-            "source": self.source, "consumers": self.consumers,
+            "name": self.name,
+            "description": self.description,
+            "owner": self.owner,
+            "schema": self.schema,
+            "zone": self.zone,
+            "source": self.source,
+            "consumers": self.consumers,
             "freshness_sla_hours": self.freshness_sla_hours,
             "version": self.version,
-            "created_at": self.created_at, "updated_at": self.updated_at,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
         }
 
     @classmethod
@@ -112,8 +128,7 @@ class Catalog:
     def register(self, **kw: Any) -> DatasetEntry:
         entry = DatasetEntry(**kw)
         if entry.name in self._entries:
-            raise CatalogError(
-                f"dataset '{entry.name}' đã đăng ký — dùng update() để đổi metadata")
+            raise CatalogError(f"dataset '{entry.name}' đã đăng ký — dùng update() để đổi metadata")
         self._entries[entry.name] = entry
         return entry
 
@@ -158,12 +173,10 @@ class Catalog:
                 problems.append(f"{name}: zone '{e.zone}' không hợp lệ")
             for src in e.source:
                 if src not in self._entries:
-                    problems.append(
-                        f"{name}: source '{src}' chưa đăng ký trong catalog")
+                    problems.append(f"{name}: source '{src}' chưa đăng ký trong catalog")
             for c in e.consumers:
                 if c not in self._entries:
-                    problems.append(
-                        f"{name}: consumer '{c}' chưa đăng ký trong catalog")
+                    problems.append(f"{name}: consumer '{c}' chưa đăng ký trong catalog")
         return problems
 
     # -- lưu / đọc -------------------------------------------------------
@@ -193,9 +206,7 @@ class Catalog:
             return
         with open(target, encoding="utf-8") as fh:
             raw = json.load(fh)
-        self._entries = {
-            d["name"]: DatasetEntry.from_dict(d) for d in raw.get("datasets", [])
-        }
+        self._entries = {d["name"]: DatasetEntry.from_dict(d) for d in raw.get("datasets", [])}
 
     def __len__(self) -> int:
         return len(self._entries)
@@ -216,21 +227,32 @@ def seed_default_catalog() -> Catalog:
     """
     cat = Catalog(path=os.devnull)
     cat.register(
-        name="raw_production", description="CSV tho tu MES",
-        owner="manufacturing-data", zone="RAW", source=[], version="1.0.0",
+        name="raw_production",
+        description="CSV tho tu MES",
+        owner="manufacturing-data",
+        zone="RAW",
+        source=[],
+        version="1.0.0",
         schema={"Date": "date", "Actual_Qty": "int", "Good_Qty": "int"},
     )
     cat.register(
-        name="silver_production", description="Da clean + qua contract gate",
-        owner="manufacturing-data", zone="SILVER", source=["raw_production"],
-        version="1.0.0", consumers=GOLD_DATASETS,
+        name="silver_production",
+        description="Da clean + qua contract gate",
+        owner="manufacturing-data",
+        zone="SILVER",
+        source=["raw_production"],
+        version="1.0.0",
+        consumers=GOLD_DATASETS,
         freshness_sla_hours=24,
     )
     for g in GOLD_DATASETS:
         cat.register(
-            name=g, description=f"Gold curated: {g}",
-            owner="manufacturing-data", zone="GOLD", source=["silver_production"],
-            version="1.0.0", freshness_sla_hours=48,
+            name=g,
+            description=f"Gold curated: {g}",
+            owner="manufacturing-data",
+            zone="GOLD",
+            source=["silver_production"],
+            version="1.0.0",
+            freshness_sla_hours=48,
         )
     return cat
-

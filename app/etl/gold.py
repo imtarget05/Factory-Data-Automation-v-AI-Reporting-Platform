@@ -43,14 +43,43 @@ GOLD_DATASETS = (
 
 # Cột bắt buộc mỗi frame đầu vào. Thiếu → raise (fail loud, không im lặng bỏ).
 REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "production": ("Date", "Line", "Machine_ID", "Target_Qty", "Actual_Qty",
-                   "Good_Qty", "Reject_Qty", "Cycle_Time_sec"),
-    "quality": ("Date", "Product", "Line", "Defect_Type", "Defect_Count",
-                "Inspected_Qty", "Severity"),
-    "inventory": ("Date", "Product", "Stock_Qty", "Reorder_Point",
-                  "Max_Capacity", "Unit_Price", "Supplier"),
-    "machine": ("Date", "Machine_ID", "Status", "Temperature_C",
-                "Vibration_mm", "Downtime_min", "Line"),
+    "production": (
+        "Date",
+        "Line",
+        "Machine_ID",
+        "Target_Qty",
+        "Actual_Qty",
+        "Good_Qty",
+        "Reject_Qty",
+        "Cycle_Time_sec",
+    ),
+    "quality": (
+        "Date",
+        "Product",
+        "Line",
+        "Defect_Type",
+        "Defect_Count",
+        "Inspected_Qty",
+        "Severity",
+    ),
+    "inventory": (
+        "Date",
+        "Product",
+        "Stock_Qty",
+        "Reorder_Point",
+        "Max_Capacity",
+        "Unit_Price",
+        "Supplier",
+    ),
+    "machine": (
+        "Date",
+        "Machine_ID",
+        "Status",
+        "Temperature_C",
+        "Vibration_mm",
+        "Downtime_min",
+        "Line",
+    ),
 }
 
 
@@ -62,8 +91,7 @@ def _require(datasets: dict, name: str) -> pd.DataFrame:
     """Lấy frame đã clean (silver) và kiểm tra cột bắt buộc."""
     if name not in datasets or datasets[name] is None:
         raise GoldContractError(
-            f"thiếu dataset '{name}' — gold chỉ nhận dữ liệu đã qua silver, "
-            f"không đọc ngược raw"
+            f"thiếu dataset '{name}' — gold chỉ nhận dữ liệu đã qua silver, không đọc ngược raw"
         )
     df = datasets[name]
     if not isinstance(df, pd.DataFrame):
@@ -97,17 +125,14 @@ def build_oee_daily(production: pd.DataFrame) -> pd.DataFrame:
         raise GoldContractError("production không có Date hợp lệ sau khi parse")
 
     shift_agg = ("Shift", "nunique") if "Shift" in df.columns else ("Machine_ID", "size")
-    out = (
-        df.groupby("Date", as_index=False)
-        .agg(
-            Total_Target=("Target_Qty", "sum"),
-            Total_Actual=("Actual_Qty", "sum"),
-            Total_Good=("Good_Qty", "sum"),
-            Total_Reject=("Reject_Qty", "sum"),
-            Avg_Cycle_Time_sec=("Cycle_Time_sec", "mean"),
-            Machine_Count=("Machine_ID", "nunique"),
-            Shift_Count=shift_agg,
-        )
+    out = df.groupby("Date", as_index=False).agg(
+        Total_Target=("Target_Qty", "sum"),
+        Total_Actual=("Actual_Qty", "sum"),
+        Total_Good=("Good_Qty", "sum"),
+        Total_Reject=("Reject_Qty", "sum"),
+        Avg_Cycle_Time_sec=("Cycle_Time_sec", "mean"),
+        Machine_Count=("Machine_ID", "nunique"),
+        Shift_Count=shift_agg,
     )
     out["Performance_pct"] = (_safe_div(out["Total_Actual"], out["Total_Target"]) * 100).round(2)
     out["Quality_pct"] = (_safe_div(out["Total_Good"], out["Total_Actual"]) * 100).round(2)
@@ -115,7 +140,8 @@ def build_oee_daily(production: pd.DataFrame) -> pd.DataFrame:
     out["OEE_pct"] = (
         _safe_div(out["Availability_pct"], 100)
         * _safe_div(out["Performance_pct"], 100)
-        * _safe_div(out["Quality_pct"], 100) * 100
+        * _safe_div(out["Quality_pct"], 100)
+        * 100
     ).round(2)
     return out.sort_values("Date").reset_index(drop=True)
 
@@ -131,26 +157,28 @@ def build_quality_daily(quality: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         raise GoldContractError("quality không có Date hợp lệ sau khi parse")
 
-    out = (
-        df.groupby("Date", as_index=False)
-        .agg(
-            Total_Defects=("Defect_Count", "sum"),
-            Total_Inspected=("Inspected_Qty", "sum"),
-            Defect_Type_Count=("Defect_Type", "nunique"),
-            Product_Count=("Product", "nunique"),
-            Line_Count=("Line", "nunique"),
-        )
+    out = df.groupby("Date", as_index=False).agg(
+        Total_Defects=("Defect_Count", "sum"),
+        Total_Inspected=("Inspected_Qty", "sum"),
+        Defect_Type_Count=("Defect_Type", "nunique"),
+        Product_Count=("Product", "nunique"),
+        Line_Count=("Line", "nunique"),
     )
     # Pivot cố định để schema ổn định giữa các lần chạy.
     # reset_index() tạo cột tên là "index" (không phải "Date") nên phải đặt lại tên
     # trước khi đổi prefix — nếu không, cột join sẽ thành "Defects_Date" và merge hỏng.
-    sev = (df.pivot_table(index="Date", columns="Severity",
-                          values="Defect_Count", aggfunc="sum", fill_value=0)
-           .reset_index().rename(columns={"index": "Date"}))
+    sev = (
+        df.pivot_table(
+            index="Date", columns="Severity", values="Defect_Count", aggfunc="sum", fill_value=0
+        )
+        .reset_index()
+        .rename(columns={"index": "Date"})
+    )
     sev.columns = ["Date" if c == "Date" else f"Defects_{c}" for c in sev.columns]
     out = out.merge(sev, on="Date", how="left")
-    out["Defect_Rate_pct"] = (
-        _safe_div(out["Total_Defects"], out["Total_Inspected"]) * 100).round(2)
+    out["Defect_Rate_pct"] = (_safe_div(out["Total_Defects"], out["Total_Inspected"]) * 100).round(
+        2
+    )
     out["Pass_Rate_pct"] = (100 - out["Defect_Rate_pct"]).round(2)
     return out.sort_values("Date").reset_index(drop=True)
 
@@ -171,8 +199,7 @@ def build_inventory_snapshot(inventory: pd.DataFrame) -> pd.DataFrame:
     snap["Snapshot_Date"] = latest
     snap["Stock_Value"] = (snap["Stock_Qty"] * snap["Unit_Price"]).round(2)
     snap["Below_Reorder_Point"] = snap["Stock_Qty"] < snap["Reorder_Point"]
-    snap["Capacity_Used_pct"] = (
-        _safe_div(snap["Stock_Qty"], snap["Max_Capacity"]) * 100).round(2)
+    snap["Capacity_Used_pct"] = (_safe_div(snap["Stock_Qty"], snap["Max_Capacity"]) * 100).round(2)
     snap["Stock_Status"] = "OK"
     # Thứ tự phải từ nghiêm ngặt → nhẹ: OVER_CAPACITY trước, REORDER sau,
     # OUT_OF_STOCK cuối. Nếu đảo thì OUT_OF_STOCK bị REORDER đè mất, vì
@@ -199,17 +226,14 @@ def build_machine_health(machine: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         raise GoldContractError("machine không có Date hợp lệ sau khi parse")
 
-    out = (
-        df.groupby("Date", as_index=False)
-        .agg(
-            Machine_Count=("Machine_ID", "nunique"),
-            Avg_Temperature_C=("Temperature_C", "mean"),
-            Max_Temperature_C=("Temperature_C", "max"),
-            Avg_Vibration_mm=("Vibration_mm", "mean"),
-            Max_Vibration_mm=("Vibration_mm", "max"),
-            Total_Downtime_min=("Downtime_min", "sum"),
-            Downtime_Machine_Count=("Status", lambda s: int((s == "DOWN").sum())),
-        )
+    out = df.groupby("Date", as_index=False).agg(
+        Machine_Count=("Machine_ID", "nunique"),
+        Avg_Temperature_C=("Temperature_C", "mean"),
+        Max_Temperature_C=("Temperature_C", "max"),
+        Avg_Vibration_mm=("Vibration_mm", "mean"),
+        Max_Vibration_mm=("Vibration_mm", "max"),
+        Total_Downtime_min=("Downtime_min", "sum"),
+        Downtime_Machine_Count=("Status", lambda s: int((s == "DOWN").sum())),
     )
     # round() không nhận được tuple trong .agg(), nên làm sau khi aggregate.
     out["Avg_Temperature_C"] = out["Avg_Temperature_C"].round(2)
@@ -219,8 +243,9 @@ def build_machine_health(machine: pd.DataFrame) -> pd.DataFrame:
     out["Warning_Count"] = 0
     out.loc[out["Max_Temperature_C"] > TEMP_WARN_C, "Warning_Count"] += 1
     out.loc[out["Max_Vibration_mm"] > VIB_WARN_MM, "Warning_Count"] += 1
-    out["Health_Status"] = out["Warning_Count"].map(
-        {0: "HEALTHY", 1: "WARN", 2: "CRITICAL"}).fillna("HEALTHY")
+    out["Health_Status"] = (
+        out["Warning_Count"].map({0: "HEALTHY", 1: "WARN", 2: "CRITICAL"}).fillna("HEALTHY")
+    )
     return out.sort_values("Date").reset_index(drop=True)
 
 
@@ -245,8 +270,7 @@ def build_gold(datasets: dict) -> dict[str, pd.DataFrame]:
     return gold
 
 
-def export_gold(gold: dict[str, pd.DataFrame],
-                outdir: str | None = None) -> dict[str, Any]:
+def export_gold(gold: dict[str, pd.DataFrame], outdir: str | None = None) -> dict[str, Any]:
     """
     Ghi gold ra parquet (snappy) + csv.
 
@@ -264,8 +288,10 @@ def export_gold(gold: dict[str, pd.DataFrame],
         df.to_parquet(pq, engine="pyarrow", compression="snappy", index=False)
         df.to_csv(csv, index=False)
         manifest["datasets"][name] = {
-            "parquet": pq, "csv": csv,
-            "rows": int(len(df)), "columns": list(df.columns),
+            "parquet": pq,
+            "csv": csv,
+            "rows": int(len(df)),
+            "columns": list(df.columns),
         }
     manifest["total_rows"] = int(sum(len(g) for g in gold.values()))
     return manifest

@@ -19,7 +19,8 @@ import pandas as pd
 
 MARTS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-    "data", "marts",
+    "data",
+    "marts",
 )
 DB_NAME = "marts.db"
 
@@ -80,23 +81,53 @@ def build_marts(gold: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
 
     oee = gold.get("oee_daily")
     if oee is not None:
-        m = _project("mart_oee", oee, [
-            "Date", "Total_Target", "Total_Actual", "Total_Good", "Total_Reject",
-            "Quality_pct", "Performance_pct", "OEE_pct"])
+        m = _project(
+            "mart_oee",
+            oee,
+            [
+                "Date",
+                "Total_Target",
+                "Total_Actual",
+                "Total_Good",
+                "Total_Reject",
+                "Quality_pct",
+                "Performance_pct",
+                "OEE_pct",
+            ],
+        )
         marts["mart_oee"] = m.sort_values("Date").reset_index(drop=True)
 
     qual = gold.get("quality_daily")
     if qual is not None:
-        m = _project("mart_quality", qual, [
-            "Date", "Total_Defects", "Total_Inspected", "Defect_Rate_pct",
-            "Pass_Rate_pct", "Defect_Type_Count", "Product_Count"])
+        m = _project(
+            "mart_quality",
+            qual,
+            [
+                "Date",
+                "Total_Defects",
+                "Total_Inspected",
+                "Defect_Rate_pct",
+                "Pass_Rate_pct",
+                "Defect_Type_Count",
+                "Product_Count",
+            ],
+        )
         marts["mart_quality"] = m.sort_values("Date").reset_index(drop=True)
 
     inv = gold.get("inventory_snapshot")
     if inv is not None:
-        m = _project("mart_inventory", inv, [
-            "Product", "Stock_Qty", "Reorder_Point", "Stock_Value",
-            "Stock_Status", "Snapshot_Date"])
+        m = _project(
+            "mart_inventory",
+            inv,
+            [
+                "Product",
+                "Stock_Qty",
+                "Reorder_Point",
+                "Stock_Value",
+                "Stock_Status",
+                "Snapshot_Date",
+            ],
+        )
         marts["mart_inventory"] = m.sort_values("Product").reset_index(drop=True)
 
     return marts
@@ -135,8 +166,7 @@ def mart_row_counts(db_path: str) -> dict[str, int]:
     with sqlite3.connect(db_path) as con:
         for name in MART_SOURCE:
             try:
-                out[name] = int(
-                    con.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])
+                out[name] = int(con.execute(f'SELECT COUNT(*) FROM "{name}"').fetchone()[0])
             except sqlite3.OperationalError:
                 out[name] = -1  # bảng không tồn tại
     return out
@@ -150,6 +180,7 @@ def kpi_summary(db_path: str) -> dict:
     cham vao gold/raw.
     """
     with sqlite3.connect(db_path) as con:
+
         def scalar(sql: str, default=None):
             row = con.execute(sql).fetchone()
             return row[0] if row and row[0] is not None else default
@@ -160,12 +191,11 @@ def kpi_summary(db_path: str) -> dict:
             "avg_oee_pct": scalar("SELECT ROUND(AVG(OEE_pct), 2) FROM mart_oee"),
             "days_with_data": scalar("SELECT COUNT(*) FROM mart_oee", 0),
             "total_defects": scalar("SELECT SUM(Total_Defects) FROM mart_quality", 0),
-            "defect_rate_pct": scalar(
-                "SELECT ROUND(AVG(Defect_Rate_pct), 2) FROM mart_quality"),
+            "defect_rate_pct": scalar("SELECT ROUND(AVG(Defect_Rate_pct), 2) FROM mart_quality"),
             "skus_not_ok": scalar(
-                "SELECT COUNT(*) FROM mart_inventory WHERE Stock_Status <> 'OK'", 0),
-            "inventory_value": scalar(
-                "SELECT ROUND(SUM(Stock_Value), 2) FROM mart_inventory", 0),
+                "SELECT COUNT(*) FROM mart_inventory WHERE Stock_Status <> 'OK'", 0
+            ),
+            "inventory_value": scalar("SELECT ROUND(SUM(Stock_Value), 2) FROM mart_inventory", 0),
         }
 
 

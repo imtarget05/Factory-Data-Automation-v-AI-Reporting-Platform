@@ -3,6 +3,7 @@ Test Catalog registry + Lineage — lớp ④ Cataloging & Search.
 
 Không chỉ test object tồn tại: mỗi hành vi được kiểm bằng kết quả quan sát được.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,15 +16,34 @@ from app.catalog.registry import ZONE_ORDER, Catalog, CatalogError, seed_default
 @pytest.fixture
 def cat() -> Catalog:
     c = Catalog(path="/dev/null")
-    c.register(name="raw_a", description="raw A", owner="team-data",
-               zone="RAW", source=[], version="1.0.0")
-    c.register(name="silver_a", description="silver A", owner="team-data",
-               zone="SILVER", source=["raw_a"], version="1.0.0",
-               consumers=["gold_a"])
-    c.register(name="gold_a", description="gold A", owner="team-data",
-               zone="GOLD", source=["silver_a"], version="1.0.0")
-    c.register(name="mart_a", description="mart A", owner="team-bi",
-               zone="MART", source=["gold_a"], version="1.0.0")
+    c.register(
+        name="raw_a", description="raw A", owner="team-data", zone="RAW", source=[], version="1.0.0"
+    )
+    c.register(
+        name="silver_a",
+        description="silver A",
+        owner="team-data",
+        zone="SILVER",
+        source=["raw_a"],
+        version="1.0.0",
+        consumers=["gold_a"],
+    )
+    c.register(
+        name="gold_a",
+        description="gold A",
+        owner="team-data",
+        zone="GOLD",
+        source=["silver_a"],
+        version="1.0.0",
+    )
+    c.register(
+        name="mart_a",
+        description="mart A",
+        owner="team-bi",
+        zone="MART",
+        source=["gold_a"],
+        version="1.0.0",
+    )
     return c
 
 
@@ -40,8 +60,7 @@ def test_register_then_get_returns_entry(cat):
 
 def test_duplicate_registration_raises(cat):
     with pytest.raises(CatalogError, match="đã đăng ký"):
-        cat.register(name="gold_a", description="x", owner="o",
-                     zone="GOLD", source=[], version="9")
+        cat.register(name="gold_a", description="x", owner="o", zone="GOLD", source=[], version="9")
 
 
 def test_unknown_dataset_raises_with_helpful_message(cat):
@@ -57,8 +76,9 @@ def test_missing_required_field_raises():
 
 def test_invalid_zone_rejected(cat):
     with pytest.raises(CatalogError, match="zone"):
-        cat.register(name="bad", description="d", owner="o",
-                     zone="GOLD_LAKE", source=[], version="1")
+        cat.register(
+            name="bad", description="d", owner="o", zone="GOLD_LAKE", source=[], version="1"
+        )
 
 
 def test_list_sorted_by_medallion_zone_order(cat):
@@ -124,16 +144,29 @@ def test_validate_clean_catalog_returns_no_problems(cat):
 
 def test_validate_flags_unregistered_source():
     c = Catalog(path="/dev/null")
-    c.register(name="silver_x", description="d", owner="o", zone="SILVER",
-               source=["khong_co_trong_catalog"], version="1")
+    c.register(
+        name="silver_x",
+        description="d",
+        owner="o",
+        zone="SILVER",
+        source=["khong_co_trong_catalog"],
+        version="1",
+    )
     problems = c.validate()
     assert any("khong_co_trong_catalog" in p for p in problems)
 
 
 def test_validate_flags_unregistered_consumer():
     c = Catalog(path="/dev/null")
-    c.register(name="gold_x", description="d", owner="o", zone="GOLD",
-               source=[], consumers=["khong_ton_tai"], version="1")
+    c.register(
+        name="gold_x",
+        description="d",
+        owner="o",
+        zone="GOLD",
+        source=[],
+        consumers=["khong_ton_tai"],
+        version="1",
+    )
     assert any("consumer" in p or "khong_ton_tai" in p for p in c.validate())
 
 

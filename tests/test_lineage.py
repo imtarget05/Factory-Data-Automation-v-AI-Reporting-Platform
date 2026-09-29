@@ -4,6 +4,7 @@ Test Lineage — RAW -> SILVER -> GOLD -> MART.
 Bám sát hành vi quan sát được: traversal hai chiều, cycle rejection,
 idempotent rerun, serialization deterministic.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,8 +31,7 @@ def lin() -> Lineage:
 # ==========================================================================
 def test_add_edge_records_required_metadata(lin):
     e = [x for x in lin.edges() if x["target_dataset"] == "oee_daily"][0]
-    for field in ("source_dataset", "target_dataset", "transform",
-                  "run_id", "timestamp"):
+    for field in ("source_dataset", "target_dataset", "transform", "run_id", "timestamp"):
         assert field in e, f"thiếu trường edge bắt buộc: {field}"
     assert e["source_dataset"] == "silver_production"
     assert e["transform"] == "kpi_aggregate"
@@ -55,8 +55,7 @@ def test_empty_source_or_target_rejected(lin):
 # ==========================================================================
 def test_downstream_direct(lin):
     assert lin.downstream("raw_production") == ["silver_production"]
-    assert lin.downstream("silver_production") == [
-        "oee_daily", "quality_daily"]
+    assert lin.downstream("silver_production") == ["oee_daily", "quality_daily"]
 
 
 def test_upstream_direct(lin):
@@ -66,13 +65,16 @@ def test_upstream_direct(lin):
 
 def test_ancestors_transitive_upstream(lin):
     """mart_oee <- gold_oee <- silver <- raw: BFS phải thấy cả 3."""
-    assert lin.ancestors("mart_oee") == [
-        "oee_daily", "raw_production", "silver_production"]
+    assert lin.ancestors("mart_oee") == ["oee_daily", "raw_production", "silver_production"]
 
 
 def test_descendants_transitive_downstream(lin):
     assert lin.descendants("raw_production") == [
-        "mart_oee", "oee_daily", "quality_daily", "silver_production"]
+        "mart_oee",
+        "oee_daily",
+        "quality_daily",
+        "silver_production",
+    ]
 
 
 def test_leaf_node_has_no_upstream(lin):
@@ -151,8 +153,7 @@ def test_catalog_gold_names_match_gold_module_exactly():
     cat = seed_default_catalog()
     assert set(GOLD_DATASETS) <= set(cat), "catalog thiếu gold dataset thật"
     for mart, gold_name in MART_SOURCE.items():
-        assert cat.has(gold_name), (
-            f"{mart} lấy từ '{gold_name}' nhưng catalog không có dataset đó")
+        assert cat.has(gold_name), f"{mart} lấy từ '{gold_name}' nhưng catalog không có dataset đó"
 
 
 def test_full_chain_raw_to_mart_is_connected():
@@ -201,8 +202,7 @@ def test_graph_method_returns_adjacency(lin):
 
 def test_length_counts_edges_not_nodes(lin):
     assert len(lin) == 4
-    nodes = {e["source_dataset"] for e in lin.edges()} | {
-        e["target_dataset"] for e in lin.edges()}
+    nodes = {e["source_dataset"] for e in lin.edges()} | {e["target_dataset"] for e in lin.edges()}
     assert len(nodes) == 5
 
     assert lin._find_cycle() is None
