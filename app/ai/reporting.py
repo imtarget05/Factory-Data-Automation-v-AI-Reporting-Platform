@@ -5,16 +5,134 @@ Zero API costs, fully offline, runs entirely on your machine.
 
 import json
 import logging
+import math
 import time
 from datetime import datetime
 
 import pandas as pd
 
 from app.ai.local_llm import get_llm
+from app.data_contracts.quality_gate import GOOD, evaluate_quality
 from app.utils.config import FACTORY_NAME
 from app.utils.logging_config import get_logger, log_event
 
 logger = get_logger("ai", "reporting")
+
+# Structured evidence + provenance helpers (module level so tests and the API
+# can build/verify the SAME deterministic artifacts the generator uses).
+import hashlib as _hashlib
+
+
+_MAX_EVIDENCE_RECORDS = 10
+
+
+def _json_safe(obj, depth: int = 0):
+    """Coerce anything KPI-ish into JSON-serializable primitives.
+
+    KPI frames and nested KPI dicts carry numpy scalars (numpy.int64 is NOT
+    a Python int) and occasionally DataFrames. FastAPI's encoder raises on
+    those, which used to turn /api/v1/report into a 500. Evidence must be a
+    transportable artifact, so every leaf is coerced here, deterministically.
+    """
+    if obj is None or isinstance(obj, (bool, int, float, str)):
+        # NaN/inf are not JSON-representable (and the gate rejects them
+        # upstream); coerce to null so no non-standard token reaches clients.
+        if isinstance(obj, float) and not math.isfinite(obj):
+            return None
+        return obj
+    if depth > 4:
+        return str(obj)
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v, depth + 1) for k, v in sorted(obj.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v, depth + 1) for v in obj]
+    if isinstance(obj, (set, frozenset)):
+        return sorted(str(v) for v in obj)
+    if hasattr(obj, "iloc") and hasattr(obj, "shape"):  # pandas DataFrame/Series
+        try:
+            import pandas as _pd
+
+            frame = obj.to_frame().T if isinstance(obj, _pd.Series) else obj
+            records = [
+                _json_safe(rec, depth + 1)
+                for rec in frame.head(_MAX_EVIDENCE_RECORDS).to_dict(orient="records")
+            ]
+            return {"rows": int(frame.shape[0]),
+                    "columns": [str(c) for c in frame.columns],
+                    "sample": records}
+        except Exception:  # noqa: BLE001 - fall through to string form
+            return str(obj)
+    if hasattr(obj, "item") and not isinstance(obj, (dict, list)):
+        try:
+            return _json_safe(obj.item(), depth + 1)
+        except (ValueError, AttributeError, TypeError):
+            pass
+    try:
+        json.dumps(obj)
+        return obj
+    except (TypeError, ValueError):
+        return str(obj)
+
+
+def extract_kpi_evidence(kpis: dict, datasets: dict, decision) -> dict:
+    """Deterministic, machine-readable KPI evidence for one report.
+
+    This — NOT the narrative — is the source of truth for the report. Values
+    are taken from the KPI frames authorized by the quality decision; a
+    snapshot_id (content hash) makes provenance verifiable: same inputs =>
+    same id, and any later mutation of the returned dict does not change it.
+    """
+    kpi_values: dict = {}
+    for name, value in (kpis or {}).items():
+        try:
+            if hasattr(value, "iloc") and hasattr(value, "empty") and not value.empty:
+                row = value.iloc[-1]
+                flat = {}
+                for col in row.index:
+                    v = row[col]
+                    if hasattr(v, "item"):
+                        v = v.item()
+                    if isinstance(v, (int, float, str, bool)) or v is None:
+                        flat[str(col)] = _json_safe(v)
+                kpi_values[str(name)] = flat
+            elif isinstance(value, dict):
+                kpi_values[str(name)] = _json_safe(value)
+        except Exception:  # noqa: BLE001 - evidence extraction never crashes the gate
+            continue
+    source_ids = [f"kpi:{k}" for k in kpi_values]
+    source_ids += [f"dataset:{k}" for k in sorted((datasets or {}).keys())]
+    evidence = {
+        "sources": sorted((datasets or {}).keys()),
+        "kpi_names": sorted(kpi_values.keys()),
+        "kpis": kpi_values,
+        "quality_status": getattr(decision, "status", UNKNOWN_STATUS),
+        "quality_reason": getattr(decision, "reason", ""),
+        "period": dict(getattr(decision, "period", {}) or {}),
+        "source_ids": source_ids,
+        "generated_by": "deterministic_kpi_evidence",
+    }
+    canonical = json.dumps(
+        {"kpis": evidence["kpis"], "sources": evidence["sources"]},
+        sort_keys=True, ensure_ascii=False, default=str)
+    evidence["snapshot_id"] = "snap-" + _hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+    return evidence
+
+
+UNKNOWN_STATUS = "UNKNOWN"
+
+
+def validate_provenance(provenance_ids, evidence: dict) -> list:
+    """Return the provenance ids NOT authorized by `evidence` (fail closed).
+
+    Only structured ids count: every cited id must exist in the evidence's
+    own `source_ids`. No NLP fact-checking — provenance is a deterministic
+    set-membership check.
+    """
+    if not isinstance(provenance_ids, list):
+        return ["<provenance not a list>"]
+    authorized = set((evidence or {}).get("source_ids", []))
+    return [str(pid) for pid in provenance_ids if str(pid) not in authorized]
+
 
 
 class AIReportGenerator:
@@ -90,9 +208,35 @@ class AIReportGenerator:
 
         return "\n".join(lines)
 
-    def generate_report(self, kpis: dict, alerts: list[dict], datasets: dict) -> dict:
-        """Generate AI report from KPIs and alerts using local Qwen."""
+    def generate_report(self, kpis: dict, alerts: list[dict], datasets: dict,
+                        quarantine: dict | None = None) -> dict:
+        """Quality-gated AI report: the deterministic gate — not the LLM —
+        authorizes whether reporting may proceed at all.
+
+        Returns a report dict (same contract as before) that always carries
+        `generation_mode` (REAL_MODEL | FALLBACK | NOT_RUN), `quality`
+        (the gate decision), `evidence` (structured KPI source of truth) and
+        `provenance` (structured source ids only).
+        """
         start = time.time()
+
+        # --- deterministic Data Quality authorization boundary -------------
+        decision = evaluate_quality(datasets=datasets, kpis=kpis, quarantine=quarantine)
+        log_event(
+            logger, "quality_gate_decision", component="ai_reporting",
+            status=decision.status, reason=decision.reason,
+            failed_checks=[c["name"] for c in decision.checks if not c["ok"]],
+        )
+        if decision.status != GOOD:
+            # BAD or UNKNOWN: fail closed. The LLM is never invoked.
+            log_event(
+                logger, "report_blocked", level=logging.WARNING,
+                component="ai_reporting", status=decision.status,
+                reason=decision.reason,
+            )
+            return self._blocked_report(decision)
+
+        evidence = extract_kpi_evidence(kpis, datasets, decision)
         context = self._build_context(kpis, alerts, datasets)
 
         if self.llm.available:
@@ -131,7 +275,7 @@ Respond ONLY with valid JSON. No markdown, no code blocks, no explanation."""
                     duration_ms=elapsed_ms,
                     report_keys=list(report.keys()),
                 )
-                return report
+                return self._finalize_report(report, evidence, decision, "REAL_MODEL")
             log_event(
                 logger,
                 "llm_report_fallback",
@@ -141,10 +285,69 @@ Respond ONLY with valid JSON. No markdown, no code blocks, no explanation."""
                 reason="llm_returned_none",
             )
 
-        # Fallback: generate a data-driven mock report
+        # Fallback: deterministic data-driven report (NOT a real-model result)
         elapsed_ms = round((time.time() - start) * 1000, 2)
         log_event(logger, "data_driven_report", component="ai_reporting", duration_ms=elapsed_ms)
-        return self._generate_data_driven_report(kpis, alerts)
+        return self._finalize_report(
+            self._generate_data_driven_report(kpis, alerts), evidence, decision, "FALLBACK"
+        )
+
+    # -- quality boundary helpers -------------------------------------------
+
+    def _blocked_report(self, decision) -> dict:
+        """Explicit deterministic block: standard report keys, no LLM output."""
+        return {
+            "title": "Daily Manufacturing Performance Report — BLOCKED",
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "status": "BLOCKED",
+            "generation_mode": "NOT_RUN",
+            "summary": f"Report blocked by data-quality gate: {decision.reason}",
+            "key_metrics": {
+                "production_achievement": "N/A",
+                "reject_rate": "N/A",
+                "oee": "N/A",
+                "inventory_status": "N/A",
+            },
+            "problems": [],
+            "root_causes": [],
+            "recommendations": [],
+            "risks": [],
+            "quality": decision.to_dict(),
+            "evidence": None,
+            "provenance": [],
+            "provenance_rejected": 0,
+        }
+
+    def _finalize_report(self, report: dict, evidence: dict, decision, mode: str) -> dict:
+        """Attach deterministic provenance; the narrative never owns it.
+
+        Any `provenance`/`sources` list the model produced is validated
+        against the authorized evidence ids — unauthorized ids are dropped
+        and counted. The gate decision and evidence are written last, so a
+        model cannot overwrite them.
+        """
+        llm_prov = report.pop("provenance", None) if isinstance(report, dict) else None
+        # A narrative that cites nothing (deterministic fallback) is not a
+        # violation: rejected must stay 0, not count "no provenance key".
+        rejected = validate_provenance(llm_prov, evidence) if llm_prov is not None else []
+        accepted = (
+            [p for p in llm_prov if str(p) not in rejected]
+            if isinstance(llm_prov, list)
+            else []
+        )
+        report = dict(report or {})
+        report["generation_mode"] = mode
+        report["status"] = "OK"  # only this code may set report status, not the model
+        report["provenance"] = list(dict.fromkeys(list(evidence["source_ids"]) + accepted))
+        report["provenance_rejected"] = len(rejected)
+        report["evidence"] = evidence
+        report["quality"] = decision.to_dict()
+        log_event(
+            logger, "report_provenance", component="ai_reporting",
+            snapshot_id=evidence["snapshot_id"], mode=mode,
+            provenance_rejected=len(rejected),
+        )
+        return report
 
     def _generate_data_driven_report(self, kpis: dict, alerts: list[dict]) -> dict:
         """Generate a report based purely on actual data (no AI needed)."""

@@ -139,8 +139,10 @@ and nothing in the repository could regenerate them.
   `app/utils/config.py:35-37` (`ALERT_REJECT_RATE = 5.0`, `ALERT_INVENTORY_MIN = 200`,
   `ALERT_DOWNTIME_MIN = 30`).
 - **FILE**: `app/reports/alert_system.py`, `app/utils/config.py:34-37`
-- **TEST**: **NOT VERIFIED** — no test in `tests/` exercises `app/reports/alert_system.py`.
-  The runtime observation below is real but is not covered by the suite.
+- **TEST**: `tests/test_alert_trigger.py` now exists (2 tests, both passing) — reject-rate
+  trigger at runtime, severity ordering and `to_dict()` serialization. The original manual
+  observation below remains as recorded; the marker is downgraded from *no coverage* to
+  *covered by tests and previously by a manual run*.
 - **RUNTIME EVIDENCE**: `AlertManager().check_all(datasets, kpis)` returned 16 alerts and logged
   `alert_check_complete {"total": 16, "critical": 6, "warnings": 10}`; `get_summary()["by_level"]`
   was `{'CRITICAL': 6, 'WARNING': 10, 'INFO': 0}`.
@@ -200,13 +202,89 @@ and nothing in the repository could regenerate them.
 
 ---
 
+## Put a fail-closed data-quality gate in front of the LLM, so no narrative can be generated from untrusted numbers
+
+- **IMPLEMENTATION**: `app/data_contracts/quality_gate.py` — `QualityDecision` (`:43`) with the three
+  statuses `GOOD`/`BAD`/`UNKNOWN` (`:29-31`), a NaN/±inf `_finite_check()` (`:68`) that also catches
+  checks that raise, dataset/KPI completeness checks, and a quarantine-rate check against
+  `QUARANTINE_RATE_MAX = 0.5` (`:39`). `evaluate_quality(datasets, kpis, quarantine)` (`:104`)
+  returns a decision and never raises: any internal error degrades to `UNKNOWN`, which blocks.
+  `app/ai/reporting.py` consumes it at the single authorization boundary
+  `generate_report()` (`:211`) → `_blocked_report()` (`:297`) for `BAD`/`UNKNOWN`, with
+  `generation_mode="NOT_RUN"`, `evidence=None`, `provenance=[]`, and **no LLM call**.
+  `extract_kpi_evidence()` (`:77`) builds the machine-readable evidence snapshot
+  (`snapshot_id = "snap-" + sha256(canonical kpis+sources)`); `validate_provenance()` (`:124`)
+  drops any cited id that is not in `evidence["source_ids"]`; `_finalize_report()` (`:321`)
+  attaches gate/evidence **after** the narrative so the model cannot overwrite them.
+  `_json_safe()` (`:29`) coerces numpy scalars/NaN/DataFrames so the payload is strictly
+  JSON-representable. `app/api/main.py` `_quality_context()` (`:286`) feeds the row-level
+  quarantine DLQ into the gate, wired into `/api/v1/report` and `/api/v1/export`.
+- **FILE**: `app/data_contracts/quality_gate.py`, `app/ai/reporting.py`, `app/api/main.py`
+- **TEST**: `tests/test_ai_quality_gate.py` — 19 tests covering `GOOD` (`:106`), NaN (`:113`),
+  ±inf (`:121`), missing dataset (`:128`), empty dataset (`:136`), missing KPI input (`:143`),
+  quarantine-rate breach (`:149`) and normal rate (`:156`), gate-error → `UNKNOWN` (`:162`),
+  LLM called once on `GOOD` (`:171`), honest `FALLBACK` labelling (`:183`), four
+  block-with-zero-LLM-calls cases (`:193`, `:206`, `:216`, `:226`), model attempting to
+  override gate/status (`:235`), fabricated provenance rejected (`:249`), snapshot
+  determinism (`:259`) and provenance set membership (`:273`).
+  `tests/test_reporting_boundary.py` — 9 tests driving the real HTTP surface: JSON-native
+  payload (regression for a 500, see below), `_json_safe` coercion of numpy/NaN/frames, no
+  false provenance count on fallback, byte-identical reports modulo the audit stamp, DLQ →
+  gate, blocked-is-200-not-500, blocked-over-HTTP-makes-zero-LLM-calls,
+  good-over-HTTP-makes-one-LLM-call, and gate/block logging events.
+- **RUNTIME EVIDENCE**:
+  - `python -m pytest -q` → `288 passed, 5 skipped, 4 xfailed in 14.29s`.
+  - Mutation controls `tests/test_ai_quality_mutations.py` `M1`–`M4` monkeypatch each check
+    into a no-op (finite check, dataset presence, quarantine rate, provenance membership) and
+    assert the gate then lets bad data through. All four are `xfail` **by design** and reported
+    as `4 xfailed`: they must never pass. If one passes, the mutation was not neutralized.
+  - Determinism over the real 26 119-row dataset, two consecutive runs:
+    `snapshot=snap-38c77a0e903797c5` both times, canonical payload sha256
+    `68649edbce3c30f3a06c900d12a182d2` both times, `identical: True`. The only field that
+    varies is `quality.evaluated_at_epoch` (wall clock, renamed from `timestamp` precisely so
+    it cannot be mistaken for deterministic content).
+  - Live generation: `/api/v1/report` on the real data returned `quality=GOOD`,
+    `mode=FALLBACK` (Ollama was not running — correctly labelled, not passed off as model
+    output), `snapshot=snap-38c77a0e903797c5`.
+- **A real bug this found, rather than a claim it prevented**: `GET /api/v1/report` returned
+  **500** on the local build. `ValueError: [TypeError("'numpy.int64' object is not iterable"),
+  TypeError('vars() argument must have __dict__ attribute')]` from FastAPI's `jsonable_encoder` —
+  a `numpy.int64` inside the nested KPI dict reached the response body (numpy ints are *not*
+  Python ints, so the encoder cannot serialise them). The 19 gate tests did not catch it because
+  their fixtures use plain Python ints. Fixed by `_json_safe()` at evidence construction, and
+  pinned by `test_report_endpoint_returns_json_native_payload`, which walks every leaf and
+  asserts it is a JSON-native type.
+
+---
+
+## Wired the existing AlertManager to runtime conditions and gave it test coverage
+
+- **IMPLEMENTATION**: no new alerting framework. `app/reports/alert_system.py` `AlertManager`
+  was reused as-is; the gate work added tests for it because a blocked report and an active
+  alert are the same operator signal.
+- **FILE**: `app/reports/alert_system.py` (unchanged), `tests/test_alert_trigger.py` (new)
+- **TEST**: `tests/test_alert_trigger.py:50` `test_alert_condition_triggers_at_runtime` asserts a
+  reject rate over 5% raises a CRITICAL alert and one under it does not; `:70`
+  `test_alert_summary_counts_and_orders_by_severity` asserts `get_summary()` counts by level
+  and orders CRITICAL before WARNING, plus `to_dict()` serialization.
+  This supersedes the **NOT VERIFIED** marker previously recorded for `alert_system.py` — it
+  is now covered by the suite, not only by a manual run.
+- **RUNTIME EVIDENCE**: `python -m pytest tests/test_alert_trigger.py -q` → `2 passed`.
+
+---
+
 ## Claims in the README that I could NOT verify, and therefore do not stand behind
 
 - **"84+ KPIs"** — `calculate_all_kpis` returns eight KPI *groups* (`app/etl/kpi_engine.py:257-293`).
   I did not count individual metrics to 84, so this number is unverified.
 - **"AI Reporting: local Qwen2.5 generates Summary, Problems, Recommendations, Risks"** — the code
   exists (`app/ai/reporting.py`, `app/ai/local_llm.py`, wired at `app/dashboard/run.py:580`) and a
-  fallback path is present, but no Ollama endpoint was contacted during this audit. **NOT VERIFIED.**
+  fallback path is present. **Still NOT VERIFIED that Ollama/Qwen produced output**: no Ollama
+  endpoint was reachable during this audit (`Cannot connect to Ollama: [Errno 61] Connection
+  refused`), so every observed report run took the deterministic `FALLBACK` path and is labelled
+  `generation_mode: "FALLBACK"` rather than `REAL_MODEL`. What *is* verified: the gate, the
+  fallback labelling, evidence snapshots, provenance validation and zero-LLM-call blocking
+  (19 + 9 tests, section above), using an injected fake LLM.
 - **`scripts/measure_time_saved.py` time-savings figures** — the script computes a hard-coded
   `750` second manual baseline (`scripts/measure_time_saved.py:33`) and a hard-coded `12` second
   "AI" time (`:48`), then sleeps 0.1 s per step. It estimates; it does not measure a real manual
@@ -218,3 +296,26 @@ and nothing in the repository could regenerate them.
   the workflow.
 - **Docker** — `docker/Dockerfile` and `docker/docker-compose.yml` exist; I did not build the image.
   **NOT VERIFIED.**
+- **The live Azure deployment does not yet run the quality gate.** Revision
+  `ca-factory-api--0000001` (traffic weight 100, created 2026-09-30T13:27:17Z) runs image tag
+  `...factory-api:4e4e8b58d0551a080ea6750deb3f2a1ce9c98265`, digest
+  `sha256:675fd4f2782308fb2779d29130cdd17006bc449958613d6fc023d3c31c5728f2` (digest confirmed
+  independently with `docker buildx imagetools inspect`). That commit is `4e4e8b58`, which predates
+  `app/data_contracts/quality_gate.py` (still untracked in git). Probing the live
+  `/api/v1/report` confirms it: the response has keys
+  `date, key_metrics, problems, recommendations, risks, root_causes, summary, title` and **no**
+  `generation_mode`, `quality`, `evidence` or `provenance`. The gate is verified locally and on
+  the test HTTP surface, **not** in the running cloud revision. Live `/api/v1/health`, `/data`,
+  `/kpis`, `/report` and `/metrics` all returned 200 when probed on 2026-09-30, and `/metrics-evil`
+  returned 404 (prefix-boundary matching works).
+- **API-key enforcement in the cloud revision is open mode.** The Container App template has no
+  environment variables (`environmentVariables: null`) and `FACTORY_API_KEY` is not provisioned, so
+  `ApiKeyMiddleware` passes all traffic through by design (`app/api/security.py:35-36`). The
+  enforced path (401 on anonymous/wrong key, open safe paths) is covered by
+  `tests/test_api_key_auth.py`; production enforcement still needs the secret. **NOT VERIFIED in
+  production.**
+- **Probe timing caveat, stated so the evidence is not overread**: the first probe attempts hit
+  Container Apps scale-from-zero and timed out at 15 s and again at 60 s; a later probe with a 90 s
+  budget answered in 0.2–0.5 s. Endpoint health was therefore established only on the warm run. A
+  cold-start SLA claim is **NOT VERIFIED** — and the revision template has no probes configured
+  (`probes: []`), so nothing in Azure itself is watching.

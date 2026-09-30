@@ -98,15 +98,23 @@ The chain is: commit → CI build provenance → image digest → Azure revision
 runtime probes. The commit is not a hash of the digest and must not be read as
 one; the provenance attestation is what links them.
 
-### Runtime verification (probed against the live URL)
+### Runtime verification (probed against the live URL, 2026-09-30)
 
 | Endpoint | Result |
 |---|---|
 | `/api/v1/health` | 200 `{"status":"healthy","data_loaded":true}` |
 | `/api/v1/data` | 200, 5 datasets, 26 132 rows |
 | `/api/v1/kpis` | 200, `daily_production` 90 rows |
-| `/api/v1/alerts` | 200, 16 active alerts |
+| `/api/v1/report` | 200, executive summary |
 | `/metrics` | 200, `factory_data_up 1` |
+| `/metrics-evil` | 404 — the safe-path matcher is exact-or-boundary, so a prefix-looking path is not treated as open |
+
+**The deployed revision predates the quality gate.** The live `/api/v1/report`
+returns `title/date/summary/key_metrics/problems/recommendations/risks/root_causes`
+and **no** `generation_mode`, `quality`, `evidence` or `provenance` keys. The gate
+is committed to the working tree and tested locally; shipping it to Azure is a
+separate step (see *Known gaps* below). Verification here means "the running image
+is the commit named above", not "the running image is the working tree".
 
 ### A deployment bug worth reading about
 
@@ -136,6 +144,67 @@ business endpoints, because the 242-test suite could not catch this: it
 generates data *before* pytest runs, so the working tree always had CSVs.
 
 Full write-up: `docs/evidence/factory_p1_triage.md` in the workspace.
+
+### Data-quality gate for AI reporting (Phase C)
+
+The AI report is only trustworthy if the numbers it narrates are trustworthy. A
+deterministic gate — not the model, not the dashboard — decides whether
+reporting may run at all:
+
+```
+raw CSV → ETL → row contracts ──violating rows──▶ quarantine DLQ
+                     │                              │
+                     ▼                              ▼
+              KPI engine ──────────────▶ evaluate_quality(datasets, kpis, quarantine)
+                                                │
+                        ┌───────────────────────┼───────────────────────┐
+                     GOOD                   BAD / UNKNOWN          (never inferred)
+                        │                       │                       │
+                        ▼                       ▼                       ✗
+              REAL_MODEL or FALLBACK      generation_mode            LLM
+              (evidence snapshot id)     = "NOT_RUN", 0 calls       unreachable
+```
+
+- `GOOD` / `BAD` / `UNKNOWN` — `UNKNOWN` is a real outcome, never rounded down to
+  "probably fine". Missing datasets or an uncomputable check produce `UNKNOWN`,
+  which blocks.
+- **Fail-closed**: `BAD` and `UNKNOWN` both return a well-formed report with
+  `status: "BLOCKED"`, `generation_mode: "NOT_RUN"`, empty `provenance` and
+  `evidence: null`. Zero LLM calls — asserted at unit *and* HTTP level.
+- **Honest generation modes**: `REAL_MODEL` (LLM answered), `FALLBACK`
+  (deterministic data-driven text — never mislabelled as model output),
+  `NOT_RUN` (blocked).
+- **Evidence is the source of truth, not the narrative.** `evidence.kpis` is
+  built from the frames themselves and carries a `snapshot_id`
+  (`snap-` + sha256 of the canonical KPI+sources JSON). Same inputs ⇒ same id.
+  NaN/±inf are coerced to `null` so no non-standard JSON token escapes.
+- **Provenance is checked, not trusted.** Any id a narrative cites must exist in
+  `evidence.source_ids`; fabricated ids are dropped and counted in
+  `provenance_rejected`. A deterministic fallback cites nothing, which is not a
+  violation — it scores 0.
+- **The quarantine DLQ feeds the gate.** `_quality_context()` in `app/api/main.py`
+  turns the row-level gate's DLQ into gate input, so a batch that is mostly
+  quarantined cannot authorize a report.
+- **Auditability through the existing logger**: `quality_gate_decision`,
+  `report_blocked`, `report_provenance` and `data_driven_report` events, all via
+  `log_event`. No parallel logging framework.
+
+Mutation controls `M1`–`M4` (`tests/test_ai_quality_mutations.py`) monkeypatch
+each check into a no-op and assert the gate tests then fail. They are marked
+`xfail` on purpose: they must never pass, and if one *does* pass, the mutation
+was not actually neutralized.
+
+### Known gaps | Khoảng trống đã biết
+
+- The Azure revision `ca-factory-api--0000001` (commit `4e4e8b58`) does **not**
+  contain the quality gate; the live report response has no
+  `generation_mode`/`quality`/`evidence` keys. Deploying the gate is the next step.
+- `FACTORY_API_KEY` is not set in the deployed container, so the API-key
+  middleware is in documented open mode there. The middleware's enforced path is
+  covered by `tests/test_api_key_auth.py`, but production enforcement requires the
+  secret to be provisioned.
+- No alerting is wired from the block path to an external channel yet; block
+  events exist only in the application log.
 
 ---
 
@@ -214,7 +283,12 @@ API docs at **http://localhost:8000/docs**
 python -m pytest tests/ -q
 ```
 
-**Verified: 258 passed, 5 skipped** at commit `4e4e8b5` (clean checkout).
+**Verified: 288 passed, 5 skipped, 4 xfailed** on the working tree
+(`4e4e8b58` + Phase C quality gate). The 4 `xfailed` are the mutation-detection
+controls `M1`–`M4` in `tests/test_ai_quality_mutations.py` — they are *supposed*
+to fail, and passing-by-failure is how they prove the gate tests detect a
+neutralized check. If `258 passed, 5 skipped` (commit `4e4e8b5`) is what you see,
+you are on the pre-Phase-C tree.
 If `data/raw/` is empty, run `python -m scripts.generate_sample_data` first —
 `tests/conftest.py` also falls back to a stdlib seed, but that smaller dataset
 is not what the numbers above were measured on.
@@ -290,11 +364,14 @@ FACTORY_NAME=Smart Factory Alpha
 ## 🧪 Test Results | Kết Quả Kiểm Thử
 
 ```
-258 passed, 5 skipped
+288 passed, 5 skipped, 4 xfailed
 ```
 
-**Reproduce:** `python -m pytest tests/ -q` — verified at commit `4e4e8b5` from a
-clean checkout, with the blessed fixture:
+The 4 `xfailed` are mutation controls (`M1`–`M4`), not flaky tests — see
+*Data-quality gate for AI reporting*.
+
+**Reproduce:** `python -m pytest tests/ -q` — measured on the working tree at
+`4e4e8b58` + Phase C, from a clean checkout, with the blessed fixture:
 
 ```
 python -m scripts.verify_fixture --blessed docs/expected/factory-fixture.json

@@ -24,6 +24,7 @@ from app.ai.marketing import MarketingGenerator
 from app.ai.reporting import AIReportGenerator
 from app.etl.kpi_engine import calculate_all_kpis
 from app.etl.pipeline import run_etl
+from app.etl.quarantine import quarantine_summary
 from app.reports.alert_system import AlertManager
 from app.reports.exporter import ReportExporter
 from app.utils.config import DATA_EXPORTS_DIR
@@ -283,9 +284,23 @@ async def get_alerts(level: Optional[str] = None):
     return {"total": len(alert_dicts), "alerts": alert_dicts}
 
 
+def _quality_context(datasets: dict) -> dict:
+    """Row-level gate outcome (the quarantine DLQ) for the dataset-level gate.
+
+    The ETL quarantines contract-violating rows into a DLQ; the reporting
+    boundary must see that outcome, otherwise a batch that is half corrupt
+    still authorizes an AI report. `passed` = rows that survived into the
+    in-memory datasets, `rejected` = rows currently sitting in the DLQ.
+    """
+    counts = quarantine_summary()
+    rejected = int(sum(counts.values()))
+    passed = int(sum(len(df) for df in (datasets or {}).values() if hasattr(df, "__len__")))
+    return {"passed": passed, "rejected": rejected, "by_dataset": counts}
+
+
 @app.get("/api/v1/report")
 async def generate_report():
-    """Generate AI report."""
+    """Generate AI report (quality-gated: BAD/UNKNOWN data never reaches the LLM)."""
     if not data_is_loaded() and not refresh_data():
         raise HTTPException(
             503,
@@ -295,7 +310,9 @@ async def generate_report():
 
     alert_dicts = [a.to_dict() for a in _alerts] if _alerts else []
     ai_gen = AIReportGenerator()
-    report = ai_gen.generate_report(_kpis, alert_dicts, _datasets)
+    report = ai_gen.generate_report(
+        _kpis, alert_dicts, _datasets, quarantine=_quality_context(_datasets)
+    )
 
     return report
 
@@ -313,7 +330,9 @@ async def export_report(format: str = Query("excel", pattern="^(excel|pdf|all)$"
     alert_dicts = [a.to_dict() for a in _alerts] if _alerts else []
     exporter = ReportExporter()
     ai_gen = AIReportGenerator()
-    ai_report = ai_gen.generate_report(_kpis, alert_dicts, _datasets)
+    ai_report = ai_gen.generate_report(
+        _kpis, alert_dicts, _datasets, quarantine=_quality_context(_datasets)
+    )
 
     if format == "excel":
         filepath = exporter.export_to_excel(_kpis, alert_dicts)
