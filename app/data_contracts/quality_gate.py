@@ -173,27 +173,40 @@ def evaluate_quality(datasets=None, kpis=None, quarantine=None) -> QualityDecisi
             if not finite_ok:
                 failures.extend(finite_failures)
 
-        if isinstance(quarantine, dict) and "rejected" in quarantine:
+        # `rejected is None` means the caller could not scope the count to this
+        # run (no ETL ran in-process). That is NOT a rate of zero: coercing it
+        # to 0 would assert "nothing was quarantined" from no evidence. Record
+        # it as not_provided so the decision says what it actually knows.
+        rejected_known = (
+            isinstance(quarantine, dict)
+            and "rejected" in quarantine
+            and quarantine.get("rejected") is not None
+        )
+        if rejected_known:
             passed = int(quarantine.get("passed", 0) or 0)
             rejected = int(quarantine.get("rejected", 0) or 0)
             total = passed + rejected
             rate = (rejected / total) if total else 0.0
             ok = rate <= QUARANTINE_RATE_MAX
+            scope = quarantine.get("scope", "unspecified")
             checks.append(
                 {
                     "name": "quarantine_rate",
                     "ok": ok,
-                    "detail": f"rate={rate:.3f} (max={QUARANTINE_RATE_MAX})",
+                    "detail": f"rate={rate:.3f} (max={QUARANTINE_RATE_MAX}, scope={scope})",
                 }
             )
             if not ok:
                 failures.append(f"quarantine rate {rate:.3f} exceeds {QUARANTINE_RATE_MAX}")
         else:
+            reason = "not_provided (row-level gate already quarantined)"
+            if isinstance(quarantine, dict) and quarantine.get("scope") == "not_provided":
+                reason = "not_provided (no ETL run in this process to scope the DLQ to)"
             checks.append(
                 {
                     "name": "quarantine_rate",
                     "ok": True,
-                    "detail": "not_provided (row-level gate already quarantined)",
+                    "detail": reason,
                 }
             )
 

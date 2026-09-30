@@ -53,6 +53,41 @@ QUARANTINE_COLUMNS = [
 # Appends from concurrent ETL runs must not interleave mid-row.
 _write_lock = threading.Lock()
 
+# Quarantine counts for the CURRENT ETL run only.
+#
+# The DLQ file is append-only, so counting its rows mixes every run that has
+# ever happened into one number. Dividing that by a per-run `passed` count makes
+# the rate climb on every run until it crosses the threshold and reporting is
+# blocked forever, regardless of how clean the data is. The file stays the
+# audit record; the gate gets run-scoped counters.
+_run_lock = threading.Lock()
+_run_counts: dict[str, int] = {}
+
+
+def reset_run_quarantine() -> None:
+    """Zero the run-scoped counters. Called at the start of an ETL run."""
+    with _run_lock:
+        _run_counts.clear()
+
+
+def record_run_quarantine(dataset: str, rows: int) -> None:
+    """Add rows quarantined for `dataset` during this run."""
+    if rows <= 0:
+        return
+    with _run_lock:
+        _run_counts[dataset] = _run_counts.get(dataset, 0) + int(rows)
+
+
+def quarantine_run_summary() -> dict[str, int]:
+    """Quarantined rows per dataset for the current ETL run.
+
+    Empty dict means no ETL has run in this process, which is NOT the same as
+    "nothing was quarantined". Callers must pass that state through as
+    not-provided rather than substituting a zero.
+    """
+    with _run_lock:
+        return dict(_run_counts)
+
 
 def sanitize_quarantine_cell(value: Any) -> str:
     """Neutralize a CSV-formula payload without hiding its content.
@@ -112,6 +147,7 @@ def write_quarantine(
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         is_new = not os.path.exists(path) or os.path.getsize(path) == 0
         stamp = datetime.now().isoformat(timespec="seconds")
+        record_run_quarantine(dataset, len(records))
         with _write_lock, open(path, "a", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
             if is_new:
@@ -134,7 +170,12 @@ def write_quarantine(
 
 
 def quarantine_summary(path: str = DATA_QUARANTINE_FILE) -> dict[str, int]:
-    """Count quarantined records per dataset, for the health endpoint/CLI."""
+    """Cumulative quarantined rows per dataset across the whole DLQ file.
+
+    This is the AUDIT view: it never shrinks, because the DLQ is append-only.
+    Do NOT divide it by a per-run row count to get a rate -- see
+    `quarantine_run_summary()` for the number the quality gate must use.
+    """
     try:
         if not os.path.exists(path):
             return {}

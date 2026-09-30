@@ -24,7 +24,7 @@ from app.ai.marketing import MarketingGenerator
 from app.ai.reporting import AIReportGenerator
 from app.etl.kpi_engine import calculate_all_kpis
 from app.etl.pipeline import run_etl
-from app.etl.quarantine import quarantine_summary
+from app.etl.quarantine import quarantine_run_summary, quarantine_summary
 from app.reports.alert_system import AlertManager
 from app.reports.exporter import ReportExporter
 from app.utils.config import DATA_EXPORTS_DIR
@@ -289,13 +289,28 @@ def _quality_context(datasets: dict) -> dict:
 
     The ETL quarantines contract-violating rows into a DLQ; the reporting
     boundary must see that outcome, otherwise a batch that is half corrupt
-    still authorizes an AI report. `passed` = rows that survived into the
-    in-memory datasets, `rejected` = rows currently sitting in the DLQ.
+    still authorizes an AI report.
+
+    `rejected` MUST be scoped to the current ETL run. The DLQ file is
+    append-only, so its total row count grows every run; dividing that
+    cumulative total by the current run's `passed` rows makes the rate climb
+    until it permanently exceeds the threshold and blocks reporting no matter
+    how clean the data is. `quarantine_run_summary()` is reset at the start of
+    every run and refilled as rows are quarantined.
+
+    When the counters are empty the state is "no ETL ran in this process",
+    which is not the same as "nothing was quarantined"; pass it through as
+    not-provided (rejected=None) so the gate records `not_provided` instead of
+    inventing a clean rate of 0.
     """
-    counts = quarantine_summary()
-    rejected = int(sum(counts.values()))
+    counts = quarantine_run_summary()
     passed = int(sum(len(df) for df in (datasets or {}).values() if hasattr(df, "__len__")))
-    return {"passed": passed, "rejected": rejected, "by_dataset": counts}
+    if not counts:
+        return {"passed": passed, "rejected": None, "by_dataset": {},
+                "scope": "not_provided", "dlq_cumulative_rows": int(sum(quarantine_summary().values()))}
+    return {"passed": passed, "rejected": int(sum(counts.values())),
+            "by_dataset": counts, "scope": "current_etl_run",
+            "dlq_cumulative_rows": int(sum(quarantine_summary().values()))}
 
 
 @app.get("/api/v1/report")

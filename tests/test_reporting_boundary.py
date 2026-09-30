@@ -10,6 +10,7 @@ Guards two things the gate alone cannot:
    never an exception — and the LLM is not invoked.
 """
 
+import csv
 import json
 import logging
 import sys
@@ -30,6 +31,7 @@ from test_ai_quality_gate import FakeLLM, make_datasets, make_generator, make_kp
 
 import app.api.main as main  # noqa: E402
 from app.ai.reporting import AIReportGenerator, _json_safe  # noqa: E402
+from app.data_contracts.quality_gate import evaluate_quality  # noqa: E402
 
 _JSON_NATIVE = (bool, int, float, str, type(None))
 
@@ -148,6 +150,59 @@ def test_real_data_reports_are_deterministic_modulo_audit_stamp(client):
         hashlib.sha256(payloads[0][1].encode()).hexdigest()
         == hashlib.sha256(payloads[1][1].encode()).hexdigest()
     )
+
+
+def test_quarantine_rate_scoped_to_current_run_not_cumulative_dlq(client, monkeypatch, tmp_path):
+    """The DLQ file is append-only; the gate rate must not use its lifetime total.
+
+    Regression: `_quality_context` divided every row ever written to
+    corrupt_records.csv by the current run's surviving rows. After 33 ETL runs
+    the cumulative total exceeded the per-run count and the gate returned BAD
+    with "quarantine rate 0.555 exceeds 0.5" on perfectly clean data — a report
+    blocked by history rather than by the batch. The rate now comes from
+    run-scoped counters that `load_and_clean_all` resets at the start of each run.
+    """
+    from app.etl import quarantine as q
+
+    # A DLQ file carrying decades of history, far more rows than one run sees.
+    huge = tmp_path / "corrupt_records.csv"
+    with open(huge, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(q.QUARANTINE_COLUMNS)
+        for i in range(5000):
+            w.writerow(["2020-01-01T00:00:00", "production", "production.csv",
+                        i, "Target_Qty", "-5", "greater_than_equal"])
+    monkeypatch.setattr(q, "DATA_QUARANTINE_FILE", str(huge), raising=False)
+    monkeypatch.setattr("app.api.main.quarantine_summary",
+                        lambda: dict(q.quarantine_summary(str(huge))))
+    monkeypatch.setattr("app.api.main.quarantine_run_summary",
+                        lambda: q.quarantine_run_summary())
+
+    assert main.refresh_data(), "ETL produced no datasets"
+
+    ctx = main._quality_context(main._datasets)
+    assert ctx["scope"] == "current_etl_run"
+    assert ctx["dlq_cumulative_rows"] >= 5000, "history is still counted, only for reporting"
+    assert ctx["rejected"] < ctx["dlq_cumulative_rows"] // 10, (
+        "rejected must be this run's rejects, not the file's lifetime total")
+
+    report = AIReportGenerator().generate_report(
+        main._kpis, [], main._datasets, quarantine=ctx)
+    assert report["quality"]["status"] == "GOOD", report["quality"]["reason"]
+    rate_check = next(c for c in report["quality"]["checks"]
+                      if c["name"] == "quarantine_rate")
+    assert rate_check["ok"] is True
+    assert "scope=current_etl_run" in rate_check["detail"]
+
+
+def test_absent_run_counters_are_not_reported_as_a_clean_zero_rate():
+    """No ETL in-process means unknown, not zero."""
+    d = evaluate_quality(datasets=make_datasets(), kpis=make_kpis(),
+                         quarantine={"passed": 100, "rejected": None,
+                                     "scope": "not_provided"})
+    qc = next(c for c in d.checks if c["name"] == "quarantine_rate")
+    assert "not_provided" in qc["detail"]
+    assert "rate=" not in qc["detail"], "an unknown count must not print a rate"
 
 
 # ------------------------------------------------------ gate over HTTP -----

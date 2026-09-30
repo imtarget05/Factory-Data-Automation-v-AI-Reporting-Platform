@@ -12,6 +12,7 @@ from typing import Optional
 import pandas as pd
 
 from app.data_contracts.schemas import DATASET_MODELS
+from app.etl.quarantine import reset_run_quarantine
 from app.utils.config import DATA_PROCESSED_DIR, DATA_RAW_DIR
 from app.utils.logging_config import get_logger, log_event
 
@@ -206,6 +207,11 @@ def load_and_clean_all(directory: Optional[str] = None) -> dict[str, pd.DataFram
         return {}
 
     log_event(logger, "etl_start", component="etl", datasets_found=list(files.keys()))
+
+    # Zero the run-scoped quarantine counters before any dataset is loaded, so
+    # the quality gate sees this run's rejects and not every run since the DLQ
+    # file was created.
+    reset_run_quarantine()
 
     datasets = {}
     for dataset_name, filepath in sorted(files.items()):
