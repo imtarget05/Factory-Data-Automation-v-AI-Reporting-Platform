@@ -236,6 +236,30 @@ def load_and_clean_all(directory: Optional[str] = None) -> dict[str, pd.DataFram
     return datasets
 
 
+class ContractGateUnavailable(RuntimeError):
+    """The contract layer could not be evaluated, so no row can be trusted.
+
+    P0-03. This exists to make one distinction impossible to get wrong:
+
+    * a **business validation failure** (a row breaks a rule) is data, and is
+      carried in a :class:`ValidationReport` so the caller can quarantine that
+      row and keep the rest of the file;
+    * a **validator implementation failure** (pydantic changed an API, a
+      contract bug, a broken import) means the rules were never applied at all.
+      Every row is *unknown*, and unknown is not approved.
+
+    The pre-fix code caught ``Exception`` and returned the input frame
+    unchanged, which silently converted the second case into the first: rows
+    that no contract had ever checked were passed downstream as validated, and
+    reached OEE / Yield / scrap-rate arithmetic. That is a data-correctness
+    defect, not an availability trade-off.
+
+    Raising here fails the job. That is deliberate and is the opposite of the
+    old behaviour: an unvalidated KPI is worse than a failed run, because a
+    failed run is visible and an unvalidated KPI is not.
+    """
+
+
 def apply_contract_gate(
     df: pd.DataFrame,
     dataset_name: str,
@@ -247,10 +271,25 @@ def apply_contract_gate(
     Validation runs on the DataFrame that is about to enter KPI math, so the
     row indexes in the quarantine file match the rows actually removed.
 
-    Fails open on purpose: if the validator itself errors (unknown dataset, a
-    pydantic change, a contract bug), the pipeline logs it and returns the frame
+    Fails CLOSED (P0-03). If the validator itself errors -- unknown dataset
+    in the model registry, a pydantic API change, a contract bug -- the rules
+    were never applied, so no row can be called valid. This raises
+    :class:`ContractGateUnavailable` rather than returning the frame.
+
+    The previous behaviour was the opposite, and this comment records why it
+    was wrong rather than deleting it. It read: *"Fails open on purpose: if the
+    validator itself errors, the pipeline logs it and returns the frame
     unchanged rather than discarding a whole file of good production data. A
-    validator crash must not look like a total data outage.
+    validator crash must not look like a total data outage."*
+
+    The concern about discarding good data is legitimate, but it was addressed
+    at the wrong level. Losing one file is a visible, recoverable outage.
+    Silently accepting rows no contract checked is an invisible one: OEE,
+    Yield and scrap rate are all computed over records that were never
+    validated, and nothing downstream can tell. Genuine per-row violations
+    still quarantine rather than abort, so a single typo still does not throw
+    away a whole file -- that is the case the original comment was reaching
+    for, and it is handled by the ValidationReport path, not here.
     """
     try:
         from app.data_contracts import infer_dataset, validate_rows
@@ -302,16 +341,25 @@ def apply_contract_gate(
         )
         return clean_df
     except Exception as exc:
+        # P0-03: this used to `return df`, i.e. accept every row unvalidated.
+        # A gate that cannot run has not passed -- it has not run. Fail the job
+        # so the rows are never used, and keep the original exception as
+        # __cause__ so the operator sees the real cause.
         log_event(
             logger,
-            "contract_gate_error",
-            level=logging.ERROR,
+            "contract_gate_unavailable",
+            level=logging.CRITICAL,
             component="etl",
             dataset=dataset_name,
             error=f"{type(exc).__name__}: {exc}",
-            action="failing_open",
+            action="failing_closed",
+            rows_rejected=len(df),
         )
-        return df
+        raise ContractGateUnavailable(
+            f"contract validation could not be evaluated for dataset "
+            f"{dataset_name!r}; refusing to pass {len(df)} unvalidated row(s) "
+            f"downstream ({type(exc).__name__}: {exc})"
+        ) from exc
 
 
 def save_processed(datasets: dict[str, pd.DataFrame], directory: Optional[str] = None):

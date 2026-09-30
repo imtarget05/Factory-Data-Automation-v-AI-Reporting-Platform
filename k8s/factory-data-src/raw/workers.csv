@@ -1,0 +1,10 @@
+Date,Worker_ID,Line,Shift,Hours_Worked,Units_Produced,Defects_Caused,Attendance,Overtime_hrs,Created_At
+2026-01-05,W-001,L1,Shift-2,8.0,80,1,Present,0.5,2026-01-05T08:00:00
+2026-01-05,W-002,L1,Shift-1,8.0,80,1,Present,0.5,2026-01-05T08:00:00
+2026-01-05,W-003,L2,Shift-1,8.0,80,1,Present,0.5,2026-01-05T08:00:00
+2026-01-06,W-001,L2,Shift-1,8.0,80,1,Present,0.5,2026-01-06T08:00:00
+2026-01-06,W-002,L1,Shift-2,8.0,80,1,Present,0.5,2026-01-06T08:00:00
+2026-01-06,W-003,L2,Shift-2,8.0,80,1,Present,0.5,2026-01-06T08:00:00
+2026-01-07,W-001,L1,Shift-1,8.0,80,1,Present,0.5,2026-01-07T08:00:00
+2026-01-07,W-002,L1,Shift-1,8.0,80,1,Present,0.5,2026-01-07T08:00:00
+2026-01-07,W-003,L2,Shift-2,8.0,80,1,Present,0.5,2026-01-07T08:00:00

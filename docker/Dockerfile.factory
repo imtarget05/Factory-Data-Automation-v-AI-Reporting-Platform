@@ -1,0 +1,38 @@
+# Image cho Factory API, dùng để verify Phase 16.5 (ứng dụng THẬT chạy
+# trong Kubernetes, không phải http-echo).
+#
+# Base python:3.11-slim thay vì 3.14 vì Airflow cần <3.13 và việc dùng chung
+# một base image giúp debug dễ hơn. Base chính thức, không phải alpine, vì
+# một số wheel (polars, pyarrow) không có bản musl.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Dependencies cài trước khi copy source, để layer cache tái dùng được khi
+# chỉ code đổi. Tách riêng khỏi COPY source là một quyết định tốn vài dòng
+# Dockerfile để tiết kiệm hàng chục giây mỗi lần build lại.
+COPY requirements.factory.txt ./
+RUN pip install --no-cache-dir -r requirements.factory.txt
+
+COPY app/ ./app/
+COPY data/ ./data/
+
+# Không chạy bằng root. Trong cluster, `runAsNonRoot: true` sẽ từ chối
+# khởi động container nếu image chạy UID 0 — đây là lý do user phải được
+# tạo ở build time, không set ở runtime.
+RUN useradd --create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# Healthcheck dùng đúng endpoint mà Kubernetes probe sẽ gọi, không phải
+# endpoint "chắc chắn còn sống".
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health',timeout=4)"
+
+CMD ["python", "-m", "uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

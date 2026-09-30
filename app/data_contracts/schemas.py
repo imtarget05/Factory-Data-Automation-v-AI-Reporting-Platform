@@ -44,6 +44,31 @@ def _not_in_future(value: date) -> date:
 CheckedDate = Annotated[date, AfterValidator(_not_in_future)]
 
 
+def _must_be_finite(value: float) -> float:
+    """Reject NaN and +/-inf on numeric fields.
+
+    P0-03 follow-up. A plain ``ge=0`` bound does NOT exclude infinity:
+    ``float("inf") >= 0`` is True, so an infinite Cycle_Time_sec or
+    Temperature_C passed the contract and then propagated -- ``mean`` and
+    ``sum`` over the column returned ``inf``, poisoning every downstream KPI
+    silently rather than raising. NaN is excluded too, because every
+    comparison against NaN is False, so ``ge=0`` cannot catch it either.
+
+    This is a *contract* rule, not a cleaning step: contracts REJECT, cleaning
+    FILLS. An infinite measurement is not a missing measurement, and
+    substituting the column median would invent a plausible cycle time for a
+    sensor that was reading infinity.
+    """
+    if value != value:  # NaN: the only value that is not equal to itself
+        raise ValueError("NaN is not a valid measurement")
+    if value in (float("inf"), float("-inf")):
+        raise ValueError(f"infinite measurement is not valid: {value}")
+    return value
+
+
+FiniteFloat = Annotated[float, AfterValidator(_must_be_finite)]
+
+
 class _StrictRow(BaseModel):
     """Shared config: ignore extra columns, strip strings, reject blanks."""
 
@@ -72,7 +97,8 @@ class ProductionRow(_StrictRow):
     Actual_Qty: Annotated[int, Field(ge=0)]
     Good_Qty: Annotated[int, Field(ge=0)]
     Reject_Qty: Annotated[int, Field(ge=0)]
-    Cycle_Time_sec: Annotated[float, Field(ge=0)]
+    # ge=0 admits +inf (inf >= 0 is True), so every float field is FiniteFloat.
+    Cycle_Time_sec: Annotated[FiniteFloat, Field(ge=0)]
     Created_At: NonEmptyStr
 
     @model_validator(mode="after")
@@ -117,7 +143,7 @@ class InventoryRow(_StrictRow):
     Outgoing_Qty: Annotated[int, Field(ge=0)]
     Reorder_Point: Annotated[int, Field(ge=0)]
     Max_Capacity: Annotated[int, Field(ge=0)]
-    Unit_Price: Annotated[float, Field(ge=0)]
+    Unit_Price: Annotated[FiniteFloat, Field(ge=0)]
     Supplier: NonEmptyStr
     Created_At: NonEmptyStr
 
@@ -128,11 +154,13 @@ class MachineRow(_StrictRow):
     Date: CheckedDate
     Machine_ID: NonEmptyStr
     Status: NonEmptyStr
-    Speed_RPM: float
-    Temperature_C: float
-    Vibration_mm: float
-    Power_Usage_pct: float
-    Downtime_min: Annotated[float, Field(ge=0)]
+    # Machine telemetry has no ge/le bound, so before P0-03 an infinite
+    # reading satisfied the contract outright. All four are FiniteFloat now.
+    Speed_RPM: FiniteFloat
+    Temperature_C: FiniteFloat
+    Vibration_mm: FiniteFloat
+    Power_Usage_pct: FiniteFloat
+    Downtime_min: Annotated[FiniteFloat, Field(ge=0)]
     Line: NonEmptyStr
     Created_At: NonEmptyStr
 
@@ -144,11 +172,11 @@ class WorkerRow(_StrictRow):
     Worker_ID: NonEmptyStr
     Line: NonEmptyStr
     Shift: NonEmptyStr
-    Hours_Worked: Annotated[float, Field(ge=0, le=24)]
+    Hours_Worked: Annotated[FiniteFloat, Field(ge=0, le=24)]
     Units_Produced: Annotated[int, Field(ge=0)]
     Defects_Caused: Annotated[int, Field(ge=0)]
     Attendance: NonEmptyStr
-    Overtime_hrs: Annotated[float, Field(ge=0)]
+    Overtime_hrs: Annotated[FiniteFloat, Field(ge=0)]
     Created_At: NonEmptyStr
 
 

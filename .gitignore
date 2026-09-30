@@ -41,3 +41,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local venvs + airflow home (moved inside repo 2026-09-29)
+.venv-airflow/
+.venv-factory/
+.airflow/
+.airflow/logs/

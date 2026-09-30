@@ -95,7 +95,56 @@ def validate_rows(dataset: str, rows: list[dict]) -> ValidationReport:
                         "rule": f"{err.get('type', '')}: {err.get('msg', '')}",
                     }
                 )
+        except (TypeError, ValueError) as exc:
+            # P0-03: the actual fail-open trigger, and a nastier one than a
+            # plain bad value.
+            #
+            # pydantic raises a bare TypeError -- NOT ValidationError -- when it
+            # tries to coerce a float NaN into an int field:
+            #
+            #     TypeError: 'float' object cannot be interpreted as an integer
+            #
+            # That happens on the real shipped path, because
+            # clean_dataframe() coerces an unparseable cell to NaN with
+            # pd.to_numeric(errors="coerce") and then hands the frame on. The
+            # caller only caught ValidationError, so this TypeError escaped
+            # validate_rows entirely, unwound past apply_contract_gate, and was
+            # swallowed by its `except Exception: return df` -- which returned
+            # the row as if it had been validated. That is how a malformed
+            # record reached KPI arithmetic.
+            #
+            # Catching it here converts the crash into the violation record the
+            # contract promises, so the row is quarantined like any other bad
+            # datum. Fail-closed at the pipeline remains as a second line of
+            # defence for failures that are genuinely not row-specific, but
+            # this one is a data problem and belongs here.
+            report.violations.append(
+                {
+                    "row_index": index,
+                    "field": "__coercion__",
+                    "value": _safe_repr(row),
+                    "rule": f"type_error: {type(exc).__name__}: {exc}",
+                }
+            )
     return report
+
+
+def _safe_repr(row: dict) -> dict:
+    """Render a row for the quarantine DLQ without letting the repr raise.
+
+    The value being recorded is by definition malformed, so building a string
+    out of it is exactly the operation that already failed once. pandas NaT and
+    numpy scalars both survive ``repr`` but not every object's ``__str__``, and
+    a second exception here would escape a handler whose whole job is to
+    contain bad data.
+    """
+    out = {}
+    for key, value in row.items():
+        try:
+            out[key] = repr(value)
+        except Exception:
+            out[key] = f"<unrepresentable {type(value).__name__}>"
+    return out
 
 
 def validate_csv(path: str, dataset: str | None = None) -> ValidationReport:

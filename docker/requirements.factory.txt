@@ -1,0 +1,20 @@
+# Dependencies tối thiểu cho Factory API chạy trong Kubernetes.
+#
+# KHÔNG dùng requirements.txt của repo: nó kéo streamlit, reportlab,
+# streamlit-aggrid, faker... — hàng trăm MB cho một API chỉ cần pandas và
+# fastapi. Image nhỏ hơn nhiều, pull nhanh hơn, và đúng thứ API cần.
+#
+# Ý nghĩa: image này chứng minh ứng dụng chạy được trong cluster. Nếu sau
+# này cần dashboard cùng image thì thêm deps tương ứng, và ghi rõ image đó
+# đã bao gồm gì.
+pandas>=2.0.0
+polars>=1.0.0
+pyarrow>=15.0.0
+openpyxl>=3.1.0
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+httpx>=0.25.0
+reportlab>=4.0.0

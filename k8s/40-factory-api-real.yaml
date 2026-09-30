@@ -1,0 +1,154 @@
+# Factory API THẬT trong Kubernetes.
+#
+# Khác với 10-maia-api.yaml (dùng http-echo để kiểm chứng cơ chế), manifest
+# này chạy ứng dụng thật của repo: FastAPI thật, pandas/polars thật, đọc CSV
+# thật từ data/raw, và /metrics thật.
+#
+# Nhờ vậy câu hỏi "manifest có đúng không" và "ứng dụng có chạy được trong
+# cluster không" trở thành MỘT câu hỏi, thay vì hai câu hỏi mà ta phải đoán
+# xem cái nào fail khiến cái kia hỏng.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: factory-api
+  namespace: portfolio
+  labels:
+    app: factory-api
+    tier: application
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: factory-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: factory-api
+    spec:
+      serviceAccountName: portfolio-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: api
+        image: factory-api:k8s
+        # imagePullPolicy: Never — ảnh đã nạp trực tiếp vào node bằng
+        # `kind load`. Để IfNotPresent, kubelet sẽ thử pull từ registry và
+        # fail vì ảnh không tồn tại ở đó.
+        imagePullPolicy: Never
+        ports:
+        - name: http
+          containerPort: 8000
+        # Mount riêng cho từng thư mục app ghi. Gộp cả /app/data vào một
+        # emptyDir sẽ làm mất dữ liệu mẫu đóng kèm trong image, nên chỉ
+        # mount đúng những thư mục là output.
+        volumeMounts:
+        - name: app-writable
+          mountPath: /app/data/processed
+        - name: app-writable
+          mountPath: /app/data/gold
+        - name: app-writable
+          mountPath: /app/data/marts
+        - name: app-writable
+          mountPath: /app/data/catalog
+        envFrom:
+        - configMapRef:
+            name: portfolio-config
+        # Readiness gọi endpoint thật của ứng dụng, không phải endpoint giả.
+        # Nếu app lỗi import hoặc không đọc được data, probe fail và pod
+        # không bao giờ vào service — đúng những gì ta muốn.
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 4
+          failureThreshold: 6
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health
+            port: http
+          initialDelaySeconds: 20
+          periodSeconds: 15
+          timeoutSeconds: 4
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+          limits:
+            # Memory limit nằm ở đây là có chủ đích: pandas + polars cùng
+            # load làm tăng bộ nhớ rõ rệt, và một pod không giới hạn sẽ
+            # đẩy được cả node rơi vào MemoryPressure.
+            memory: "512Mi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          # readOnlyRootFilesystem BỊ TẮT cho app này, và đó là hệ quả có
+          # chủ đích chứ không phải ngoại lệ cho tiện:
+          #
+          #   App ghi parquet vào data/processed/ lúc khởi động. Giữ
+          #   read-only thì app không dật được, và một pod không dật được
+          #   thì tệ hơn một filesystem ghi được — filesystem là read-only
+          #   TRONG IMAGE, không phải trong volume.
+          #
+          #   Cách đúng: giữ read-only cho phần image, và mount emptyDir chỉ
+          #   cho đúng thư mục app cần ghi. Ranh giới ghi được thu hẹp còn
+          #   một thư mục thay vì mở toàn bộ.
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop: ["ALL"]
+      # Chỉ thư mục app ghi được ghi. Mọi thứ khác vẫn read-only.
+      volumes:
+      - name: app-writable
+        emptyDir:
+          sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: factory-api
+  namespace: portfolio
+  labels:
+    app: factory-api
+spec:
+  type: ClusterIP
+  selector:
+    app: factory-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+---
+# HPA cho ứng dụng thật. metrics-server đã được cài trong cluster nên HPA
+# đọc được metric thật, không phải <unknown>.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: factory-api
+  namespace: portfolio
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: factory-api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
