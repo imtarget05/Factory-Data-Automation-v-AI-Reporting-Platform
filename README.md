@@ -96,15 +96,24 @@ questions and a change to documentation does not move the deployed artifact:
 
 The chain is: commit → CI build provenance → image digest → Azure revision →
 runtime probes. The commit is not a hash of the digest and must not be read as
-one; the provenance attestation is what links them, and here it is machine
-checked rather than asserted:
+one; the provenance attestation is what links them.
 
-```bash
-gh attestation verify \
-  oci://ghcr.io/imtarget05/factory-data-automation-v-ai-reporting-platform-factory-api:be4ace3ad14330cb92c40d5a63fa27c0544ae0ac \
-  --repo imtarget05/Factory-Data-Automation-v-AI-Reporting-Platform
-# -> SLSA v1 provenance, resolvedDependencies[0].digest.gitCommit = be4ace3ad143…
-```
+The full immutable artifact identity — source commit, OCI digest, the
+`gh attestation verify` invocation and its SLSA v1 resolvedDependencies — is
+recorded in `docs/RECRUITER-EVIDENCE.md` and `docs/evidence/images/`, which are
+the machine-checked provenance of record. This README carries the summary:
+
+| Field | Value |
+|---|---|
+| Image source commit | `be4ace3` (tag `factory-gate-dlq-fix-2026-09-30`) |
+| Azure revision | `ca-factory-api--0000002` |
+| Provenance attestation | VERIFIED (SLSA v1, CI-recorded) |
+| Full OCI ref + digest | see `docs/evidence/images/factory-api.json` |
+
+`be4ace3` scopes the quality gate's quarantine rate to the current ETL run.
+Before that, `_quality_context` divided a lifetime, append-only DLQ row count by
+a single run's surviving rows, so the ratio climbed on every run and would
+eventually block reporting permanently on healthy data.
 
 
 ### Runtime verification (probed against the live URL, 2026-09-30)
