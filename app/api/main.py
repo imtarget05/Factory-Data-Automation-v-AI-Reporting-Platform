@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Optional
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -110,15 +110,33 @@ _kpis = None
 _alerts = None
 
 
+def data_is_loaded() -> bool:
+    """True only when the ETL produced at least one non-empty dataset.
+
+    An empty dict is truthy, so the previous `is not None` check reported a
+    healthy service while `/api/v1/kpis`, `/api/v1/alerts` and
+    `/api/v1/report` were raising AttributeError/TypeError on a deployment
+    whose data/raw was empty (CSVs are gitignored, so a clean-clone image has
+    none). See docs/evidence/factory_p1_triage.md.
+    """
+    return bool(_datasets)
+
+
 def refresh_data():
-    """Refresh cached data."""
+    """Refresh cached data. Returns True only when at least one dataset loaded."""
     global _datasets, _kpis, _alerts
     _datasets = run_etl()
-    if _datasets:
+    if data_is_loaded():
         _kpis = calculate_all_kpis(_datasets)
         alert_mgr = AlertManager()
         _alerts = alert_mgr.check_all(_datasets, _kpis)
-    return _datasets is not None
+    else:
+        # Do not leave a stale/None KPI cache behind for a later caller to
+        # dereference: an empty load must read as "not ready", consistently.
+        _kpis = None
+        _alerts = None
+        return False
+    return True
 
 
 @app.get("/")
@@ -138,11 +156,21 @@ async def root():
 
 
 @app.get("/api/v1/health")
-async def health():
+async def health(response: Response):
+    """Liveness + readiness.
+
+    Reports 503 when no data is loaded. The container HEALTHCHECK in
+    Dockerfile.api points here, so a deployment with an empty data/raw
+    (gitignored CSVs) now fails its own healthcheck instead of staying green
+    while every business endpoint 500s.
+    """
+    loaded = data_is_loaded()
+    if not loaded:
+        response.status_code = 503
     return {
-        "status": "healthy",
+        "status": "healthy" if loaded else "degraded",
         "timestamp": datetime.now().isoformat(),
-        "data_loaded": _datasets is not None,
+        "data_loaded": loaded,
     }
 
 
@@ -151,7 +179,7 @@ async def prometheus_metrics():
     """Prometheus text exposition (aggregate KPI gauges, no raw dataset rows)."""
     from fastapi.responses import PlainTextResponse
 
-    up = 1 if _datasets is not None else 0
+    up = 1 if data_is_loaded() else 0
     n_alerts = len(_alerts) if _alerts else 0
     out = [
         "# HELP factory_data_up 1 if datasets loaded in memory.",
@@ -182,9 +210,14 @@ async def prometheus_metrics():
 @app.get("/api/v1/data")
 async def get_data(dataset: Optional[str] = None):
     """Get raw datasets."""
-    if _datasets is None:
-        if not refresh_data():
-            raise HTTPException(404, "No data available")
+    if not data_is_loaded() and not refresh_data():
+        # Previously this returned 200 {"datasets": {}} — a healthy-looking
+        # response that hid an empty deployment behind it.
+        raise HTTPException(
+            503,
+            "No data available: ETL loaded zero datasets. "
+            "Check that data/raw contains source files.",
+        )
 
     if dataset:
         if dataset not in _datasets:
@@ -207,9 +240,12 @@ async def get_data(dataset: Optional[str] = None):
 @app.get("/api/v1/kpis")
 async def get_kpis():
     """Get all calculated KPIs."""
-    if _kpis is None:
-        if not refresh_data():
-            raise HTTPException(404, "No data available")
+    if not data_is_loaded() and not refresh_data():
+        raise HTTPException(
+            503,
+            "No data available: ETL loaded zero datasets. "
+            "Check that data/raw contains source files.",
+        )
 
     result = {}
     for name, df in _kpis.items():
@@ -232,9 +268,12 @@ async def get_kpis():
 @app.get("/api/v1/alerts")
 async def get_alerts(level: Optional[str] = None):
     """Get active alerts."""
-    if _alerts is None:
-        if not refresh_data():
-            raise HTTPException(404, "No data available")
+    if not data_is_loaded() and not refresh_data():
+        raise HTTPException(
+            503,
+            "No data available: ETL loaded zero datasets. "
+            "Check that data/raw contains source files.",
+        )
 
     alert_dicts = [a.to_dict() for a in _alerts]
 
@@ -247,9 +286,12 @@ async def get_alerts(level: Optional[str] = None):
 @app.get("/api/v1/report")
 async def generate_report():
     """Generate AI report."""
-    if _datasets is None or _kpis is None:
-        if not refresh_data():
-            raise HTTPException(404, "No data available")
+    if not data_is_loaded() and not refresh_data():
+        raise HTTPException(
+            503,
+            "No data available: ETL loaded zero datasets. "
+            "Check that data/raw contains source files.",
+        )
 
     alert_dicts = [a.to_dict() for a in _alerts] if _alerts else []
     ai_gen = AIReportGenerator()
@@ -261,9 +303,12 @@ async def generate_report():
 @app.get("/api/v1/export")
 async def export_report(format: str = Query("excel", pattern="^(excel|pdf|all)$")):
     """Export report to Excel or PDF."""
-    if _datasets is None or _kpis is None:
-        if not refresh_data():
-            raise HTTPException(404, "No data available")
+    if not data_is_loaded() and not refresh_data():
+        raise HTTPException(
+            503,
+            "No data available: ETL loaded zero datasets. "
+            "Check that data/raw contains source files.",
+        )
 
     alert_dicts = [a.to_dict() for a in _alerts] if _alerts else []
     exporter = ReportExporter()
@@ -325,9 +370,12 @@ async def generate_marketing(
 @app.get("/api/v1/chat")
 async def chat(query: str = Query(..., description="Your question about factory data")):
     """AI Chat endpoint."""
-    if _datasets is None or _kpis is None:
-        if not refresh_data():
-            raise HTTPException(404, "No data available")
+    if not data_is_loaded() and not refresh_data():
+        raise HTTPException(
+            503,
+            "No data available: ETL loaded zero datasets. "
+            "Check that data/raw contains source files.",
+        )
 
     ai_gen = AIReportGenerator()
     context = {
@@ -367,9 +415,12 @@ async def post_query(body: dict):
         raise HTTPException(422, "timeout must be an integer")
     timeout = max(1, min(timeout, 30))
 
-    if _kpis is None:
-        if not refresh_data():
-            raise HTTPException(404, "No data available")
+    if not data_is_loaded() and not refresh_data():
+        raise HTTPException(
+            503,
+            "No data available: ETL loaded zero datasets. "
+            "Check that data/raw contains source files.",
+        )
     frames = _resolve_frames(_kpis)
     if not frames:
         raise HTTPException(422, "no KPI frames available")

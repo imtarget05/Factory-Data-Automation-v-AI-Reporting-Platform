@@ -18,6 +18,21 @@ RUN pip install --no-cache-dir -r requirements.api.txt
 
 COPY app/ ./app/
 COPY data/ ./data/
+COPY scripts/ ./scripts/
+
+# `data/raw/*` is gitignored (see .gitignore), so a clone contains only
+# .gitkeep and `COPY data/` above ships an empty source dir. That is what
+# deployed: /api/v1/health reported data_loaded=true on an empty dict while
+# /api/v1/kpis, /api/v1/alerts and /api/v1/report all returned 500.
+#
+# Generate the fixture into the image so the container is self-contained.
+# Faker is needed only by the generator (supplier names) and is therefore
+# installed and removed in the same layer — it never reaches the runtime
+# image, and requirements.api.txt stays minimal.
+RUN pip install --no-cache-dir faker \
+    && python -m scripts.generate_sample_data \
+    && test -n "$(ls -A data/raw/*.csv 2>/dev/null)" \
+    && pip uninstall -y faker
 
 # User không phải root. Không chỉ để `runAsNonRoot` không từ chối: image chạy
 # bằng UID 0 là một lỗ hổng đã biết, không phải một cấu hình bị siết.
