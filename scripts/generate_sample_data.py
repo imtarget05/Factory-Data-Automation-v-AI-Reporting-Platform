@@ -27,6 +27,8 @@ rows, missing values, stray whitespace, negative quantities) so that
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import random
 import sys
@@ -302,6 +304,62 @@ def write_datasets(datasets: dict[str, pd.DataFrame], output_dir: str) -> dict[s
     return paths
 
 
+def _sha256(path: str) -> str:
+    """Content hash of a written file.
+
+    Hashing the bytes on disk rather than the DataFrame in memory is deliberate:
+    it catches anything that changes the serialised form (column order, float
+    formatting, line terminator), which is exactly the class of drift that makes
+    a "deterministic" generator quietly stop being deterministic.
+    """
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# Bumped whenever the generated schema or dirt distribution changes in a way
+# that alters the output bytes. CI asserts the regenerated hashes match the
+# committed manifest, so a generator change that was not intentional here fails
+# loudly instead of silently invalidating every recorded test artefact.
+FIXTURE_SCHEMA_VERSION = "factory-fixture-v1"
+
+
+def write_manifest(paths: dict[str, str], datasets: dict, days: int) -> dict:
+    """Write `data/raw/_fixture_manifest.json` and return it.
+
+    The manifest is what makes `git clone -> generate -> verify -> test` a
+    closed loop. Without it a reviewer can only trust that the generator is
+    deterministic; with it, any drift between the committed expectation and a
+    fresh generation is a hard failure.
+    """
+    manifest = {
+        "schema_version": FIXTURE_SCHEMA_VERSION,
+        "seed": SEED,
+        "days": days,
+        "datasets": {
+            f"{name}.csv": {
+                "rows": int(len(df)),
+                "columns": int(len(df.columns)),
+                "sha256": _sha256(path),
+            }
+            for name, (df, path) in ((n, (datasets[n], paths[n])) for n in paths)
+        },
+    }
+    manifest["total_rows"] = sum(d["rows"] for d in manifest["datasets"].values())
+    # Hash the manifest itself so a truncated or hand-edited manifest is detected
+    # before its contents are trusted.
+    payload = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+    manifest["manifest_sha256"] = hashlib.sha256(payload.encode()).hexdigest()
+
+    out = os.path.join(os.path.dirname(paths[next(iter(paths))]), "_fixture_manifest.json")
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    return manifest
+
+
 def generate(days: int = 90, output_dir: str = None, quiet: bool = False) -> dict[str, str]:
     """Generate and write all sample data. Returns name -> written path."""
     if output_dir is None:
@@ -310,12 +368,14 @@ def generate(days: int = 90, output_dir: str = None, quiet: bool = False) -> dic
         output_dir = DATA_RAW_DIR
     datasets = build_datasets(days)
     paths = write_datasets(datasets, output_dir)
+    manifest = write_manifest(paths, datasets, days)
     if not quiet:
         total = sum(len(df) for df in datasets.values())
         print(f"Seed {SEED} | {days} days | output: {output_dir}")
         for name, df in datasets.items():
             print(f"  {name + '.csv':<16} {len(df):>7,} rows x {len(df.columns):>2} cols")
         print(f"  {'TOTAL':<16} {total:>7,} rows")
+        print(f"  manifest: {manifest['schema_version']} sha256={manifest['manifest_sha256'][:16]}")
     return paths
 
 
@@ -323,8 +383,11 @@ def main(argv: list[str] = None) -> int:
     parser = argparse.ArgumentParser(description="Generate deterministic factory sample data.")
     parser.add_argument("--days", type=int, default=90, help="number of days to simulate")
     parser.add_argument("--output-dir", default=None, help="defaults to data/raw")
+    parser.add_argument(
+        "--quiet", action="store_true", help="suppress the per-dataset summary"
+    )
     args = parser.parse_args(argv)
-    generate(days=args.days, output_dir=args.output_dir)
+    generate(days=args.days, output_dir=args.output_dir, quiet=args.quiet)
     return 0
 
 

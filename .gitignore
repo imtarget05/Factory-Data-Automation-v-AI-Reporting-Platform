@@ -46,4 +46,4 @@ Thumbs.db
 .venv-airflow/
 .venv-factory/
 .airflow/
-.airflow/logs/
+.airflow/logs/.venv-fixture/

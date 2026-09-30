@@ -1,0 +1,34 @@
+{
+  "datasets": {
+    "inventory.csv": {
+      "columns": 10,
+      "rows": 909,
+      "sha256": "0aef4dfc2d6acc47996487d619455c1cd319a866527c640c90e4d4490424b1eb"
+    },
+    "machine.csv": {
+      "columns": 10,
+      "rows": 5454,
+      "sha256": "f803bf074ba84e1b78ec85538c606484be9075ef392e47a5283a843fa83b49b4"
+    },
+    "production.csv": {
+      "columns": 12,
+      "rows": 11271,
+      "sha256": "c0214dd3e740649dce87e9a6ab59bedbe51e45ed72537640bb180ae6e9391c43"
+    },
+    "quality.csv": {
+      "columns": 9,
+      "rows": 3636,
+      "sha256": "615cde36453d1a7451f9ef06b2f130c4c7c20846c55af6e572bba8a8704cd1cb"
+    },
+    "workers.csv": {
+      "columns": 10,
+      "rows": 4849,
+      "sha256": "5bb9955542188dd087d1ca400a53c286d97ee130c4f4c2509826180dea3f9654"
+    }
+  },
+  "days": 90,
+  "manifest_sha256": "7fc05349f8517abc7dfa5039e817211ac0da8d0ca61632b6057d90c28561abad",
+  "schema_version": "factory-fixture-v1",
+  "seed": 42,
+  "total_rows": 26119
+}

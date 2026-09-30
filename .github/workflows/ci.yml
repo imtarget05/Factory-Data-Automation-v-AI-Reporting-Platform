@@ -50,8 +50,17 @@ jobs:
       # Generate it explicitly here so CI and a local clone run the exact same
       # sequence. tests/conftest.py keeps an autouse guard for anyone who runs
       # pytest directly without this step.
-      - name: Generate deterministic sample data
-        run: python -m scripts.generate_sample_data
+      #
+      # This is the documented canonical workflow:
+      #   git clone -> generate fixture -> verify fixture metadata -> run tests
+      # The verify step is what makes "deterministic" a checked claim rather
+      # than a comment: it compares the freshly generated CSVs against the
+      # committed manifest in docs/expected/ and fails the build on any drift.
+      - name: Generate deterministic test fixture
+        run: python -m scripts.generate_test_data
+
+      - name: Verify fixture metadata (schema, seed, row counts, sha256)
+        run: python -m scripts.verify_fixture --blessed docs/expected/factory-fixture.json
 
       - name: Run tests with coverage (fast only — live/infra run in ci-live.yml)
         # Test isolation: live/infra-marked tests need real LLM/infra endpoints
