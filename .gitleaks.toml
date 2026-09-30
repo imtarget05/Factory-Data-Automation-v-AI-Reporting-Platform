@@ -1,0 +1,34 @@
+# Gitleaks allowlist — narrow, justified, path-scoped.
+#
+# The only findings are `generic-api-key` hits on OCI image references that
+# the build workflow itself writes into evidence files:
+#
+#   docs/RECRUITER-EVIDENCE.md        human-written, cites the image ref
+#   docs/evidence/images/factory-api.json   written by build-container.yml
+#
+# A `ghcr.io/.../image:sha256digest` string matches generic-api-key on entropy
+# alone. It is a content address, not a credential, and suppressing the whole
+# rule would blind the scanner to real keys.
+#
+# Path-scoped, not rule-scoped: any other file still fails on generic-api-key.
+title = "Factory-Data-Automation platform: gitleaks allowlist"
+
+# CRITICAL: a custom config REPLACES the default rule set unless extended.
+# Without this, the scanner runs zero rules and the allowlist below would
+# vacuous-pass while blinding the repo. Verified: removing this block makes
+# even an injected github-pat invisible.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "OCI image references (ghcr.io factory-api tag/digest), not credentials"
+paths = [
+  '''docs/evidence/images/''',
+  '''docs/RECRUITER-EVIDENCE\.md''',
+]
+# Narrow: only the image reference itself is allowlisted. A finding must match
+# BOTH the paths above AND this regex (gitleaks ANDs criteria within one
+# entry), so a real credential added to these files still fails the scan.
+regexes = [
+  '''ghcr\.io/\S*factory-api\S*''',
+]
