@@ -22,13 +22,20 @@ def configured_api_key() -> str:
     return os.getenv("FACTORY_API_KEY", "").strip()
 
 
+def is_safe_path(path: str) -> bool:
+    """Exact-or-boundary match: /metrics is safe, /metrics-evil is not."""
+    if path in SAFE_EXACT:
+        return True
+    return any(path == p or path.startswith(p + "/") for p in SAFE_PREFIXES)
+
+
 class ApiKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         expected = configured_api_key()
         if not expected:
             return await call_next(request)  # local dev open mode
         path = request.url.path
-        if path in SAFE_EXACT or path.startswith(SAFE_PREFIXES):
+        if is_safe_path(path):
             return await call_next(request)
         provided = request.headers.get("X-Factory-API-Key", "")
         if provided and secrets.compare_digest(provided, expected):
