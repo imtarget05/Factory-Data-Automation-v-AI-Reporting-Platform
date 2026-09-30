@@ -234,7 +234,7 @@ and nothing in the repository could regenerate them.
   gate, blocked-is-200-not-500, blocked-over-HTTP-makes-zero-LLM-calls,
   good-over-HTTP-makes-one-LLM-call, and gate/block logging events.
 - **RUNTIME EVIDENCE**:
-  - `python -m pytest -q` → `288 passed, 5 skipped, 4 xfailed in 14.29s`.
+  - `python -m pytest -q` → `288 passed, 5 skipped, 4 xfailed in 39.46s` at commit `b0358ba`.
   - Mutation controls `tests/test_ai_quality_mutations.py` `M1`–`M4` monkeypatch each check
     into a no-op (finite check, dataset presence, quarantine rate, provenance membership) and
     assert the gate then lets bad data through. All four are `xfail` **by design** and reported

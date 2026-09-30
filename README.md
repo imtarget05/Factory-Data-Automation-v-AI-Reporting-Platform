@@ -283,12 +283,12 @@ API docs at **http://localhost:8000/docs**
 python -m pytest tests/ -q
 ```
 
-**Verified: 288 passed, 5 skipped, 4 xfailed** on the working tree
-(`4e4e8b58` + Phase C quality gate). The 4 `xfailed` are the mutation-detection
+**Verified: 288 passed, 5 skipped, 4 xfailed** at commit `b0358ba` (gate
+implementation in `2477cf8`). The 4 `xfailed` are the mutation-detection
 controls `M1`–`M4` in `tests/test_ai_quality_mutations.py` — they are *supposed*
 to fail, and passing-by-failure is how they prove the gate tests detect a
-neutralized check. If `258 passed, 5 skipped` (commit `4e4e8b5`) is what you see,
-you are on the pre-Phase-C tree.
+neutralized check. If `258 passed, 5 skipped` (commit `4e4e8b58`) is what you
+see, you are on the pre-Phase-C tree.
 If `data/raw/` is empty, run `python -m scripts.generate_sample_data` first —
 `tests/conftest.py` also falls back to a stdlib seed, but that smaller dataset
 is not what the numbers above were measured on.
@@ -370,8 +370,8 @@ FACTORY_NAME=Smart Factory Alpha
 The 4 `xfailed` are mutation controls (`M1`–`M4`), not flaky tests — see
 *Data-quality gate for AI reporting*.
 
-**Reproduce:** `python -m pytest tests/ -q` — measured on the working tree at
-`4e4e8b58` + Phase C, from a clean checkout, with the blessed fixture:
+**Reproduce:** `python -m pytest tests/ -q` — measured at commit `b0358ba` from a
+clean checkout, with the blessed fixture:
 
 ```
 python -m scripts.verify_fixture --blessed docs/expected/factory-fixture.json
