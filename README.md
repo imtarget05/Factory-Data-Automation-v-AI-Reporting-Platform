@@ -74,7 +74,68 @@ Export PDF / Excel + Email Alerts
 | **AI / LLM** | Ollama + Qwen2.5:3b (local, zero API cost) |
 | **Export** | ReportLab (PDF), OpenPyXL (Excel) |
 | **Scheduler** | APScheduler |
-| **Deployment** | Docker, Docker Compose |
+| **Deployment** | Docker, Docker Compose, Azure Container Apps |
+
+---
+
+## ☁️ Live Deployment | Triển khai Thật
+
+The API is deployed to Azure Container Apps and verified by probing the live
+endpoint, not by reading a config file.
+
+**Live URL:** https://ca-factory-api.wittysand-b748274c.eastasia.azurecontainerapps.io
+
+Three identities are tracked separately, because they answer different
+questions and a change to documentation does not move the deployed artifact:
+
+| Identity | Value | Means |
+|---|---|---|
+| **Source** | `4e4e8b58d0551a080ea6750deb3f2a1ce9c98265` | the commit the running image was built from |
+| **Artifact** | `sha256:675fd4f2782308fb2779d29130cdd17006bc449958613d6fc023d3c31c5728f2` | OCI digest of the pushed image (buildx attestation) |
+| **Runtime** | revision `ca-factory-api--0000001`, traffic weight 100 | the revision actually serving traffic |
+
+The chain is: commit → CI build provenance → image digest → Azure revision →
+runtime probes. The commit is not a hash of the digest and must not be read as
+one; the provenance attestation is what links them.
+
+### Runtime verification (probed against the live URL)
+
+| Endpoint | Result |
+|---|---|
+| `/api/v1/health` | 200 `{"status":"healthy","data_loaded":true}` |
+| `/api/v1/data` | 200, 5 datasets, 26 132 rows |
+| `/api/v1/kpis` | 200, `daily_production` 90 rows |
+| `/api/v1/alerts` | 200, 16 active alerts |
+| `/metrics` | 200, `factory_data_up 1` |
+
+### A deployment bug worth reading about
+
+This service previously reported itself healthy while every business endpoint
+returned 500. `data/raw/*` is gitignored, so an image built from a clean clone
+shipped an empty `data/`. `refresh_data()` produced `{}`, and
+`_datasets is not None` was **True for an empty dict** — so `/api/v1/health`
+said `data_loaded: true`, `factory_data_up` was 1, and `/api/v1/data` answered
+200 with `{"datasets": {}}`. Only the KPI, alerts and report endpoints failed,
+loudly, on top of a green health check.
+
+Three changes closed it:
+
+1. `data_is_loaded()` checks for a non-empty load. Health returns **503 /
+   degraded** when no data is loaded, so the container `HEALTHCHECK` now fails
+   an empty deployment instead of passing it.
+2. Business endpoints return **503 naming `data/raw`** rather than raising 500
+   or answering 200 with an empty payload.
+3. The image generates its own fixture at build time and asserts
+   `data/raw/*.csv` is non-empty, so a silently empty image fails the build.
+
+`tests/test_api_deployment_integrity.py` pins both directions. Reverting
+`data_is_loaded()` to `is not None` fails 9 of its 16 tests, and deleting the
+CSVs from a running container flips Docker's healthcheck to `unhealthy`. A CI
+job (`container-smoke`) builds the image from a clean clone and calls the
+business endpoints, because the 242-test suite could not catch this: it
+generates data *before* pytest runs, so the working tree always had CSVs.
+
+Full write-up: `docs/evidence/factory_p1_triage.md` in the workspace.
 
 ---
 
@@ -150,11 +211,13 @@ API docs at **http://localhost:8000/docs**
 ### Run Tests | Chạy Kiểm Thử
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests/ -q
 ```
 
-Expected: `135 passed, 4 skipped`. If `data/raw/` is empty, `tests/conftest.py` generates the
-sample data automatically first, so this command works on a bare clone too.
+**Verified: 258 passed, 5 skipped** at commit `4e4e8b5` (clean checkout).
+If `data/raw/` is empty, run `python -m scripts.generate_sample_data` first —
+`tests/conftest.py` also falls back to a stdlib seed, but that smaller dataset
+is not what the numbers above were measured on.
 
 ---
 
@@ -227,10 +290,24 @@ FACTORY_NAME=Smart Factory Alpha
 ## 🧪 Test Results | Kết Quả Kiểm Thử
 
 ```
-135 passed, 4 skipped
+258 passed, 5 skipped
 ```
 
-All tests pass (4 conditional skips for absent optional deps/data): ETL, KPI engine, quarantine, contracts, query API, SQL tooling, and parity/perf suites (15 test files).
+**Reproduce:** `python -m pytest tests/ -q` — verified at commit `4e4e8b5` from a
+clean checkout, with the blessed fixture:
+
+```
+python -m scripts.verify_fixture --blessed docs/expected/factory-fixture.json
+FIXTURE VERIFY: PASS  seed=42 days=90 datasets=5 total_rows=26119
+```
+
+The 5 skips are conditional (absent optional deps). Coverage spans ETL, KPI
+engine, quarantine, contracts, query API, SQL tooling, parity/perf, API-key
+auth, and deployment-integrity regression tests.
+
+Note: the generator needs `faker`, which is declared in `requirements.txt:13`
+but is deliberately *not* in `requirements.api.txt` — the API image installs it
+only for the build-time fixture step and removes it in the same layer.
 
 ---
 
