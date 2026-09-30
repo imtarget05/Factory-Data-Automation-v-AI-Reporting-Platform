@@ -316,24 +316,33 @@ and nothing in the repository could regenerate them.
   the workflow.
 - **Docker** — `docker/Dockerfile` and `docker/docker-compose.yml` exist; I did not build the image.
   **NOT VERIFIED.**
-- **The live Azure deployment does run the quality gate, but on an older commit than HEAD.**
-  Revision `ca-factory-api--gate` (traffic weight 100, created 2026-09-30T15:23:59Z) runs image
-  tag `...factory-api:4ea75e599200a50a87b0a235b9a5b3de9117dad3`, digest
-  `sha256:e792a653220ec80fdbb64d1b4dd94b22da3462c522da337693e8f72378ac7574` (digest confirmed
-  with `docker buildx imagetools inspect`). Probing live `/api/v1/report` returns
-  `generation_mode: "FALLBACK"`, `status: "OK"`, `quality.status: "GOOD"` ("all checks passed",
-  5/5 checks ok: `datasets_present`, `datasets_non_empty`, `kpi_inputs_present`,
-  `kpi_values_finite`, `quarantine_rate`), `evidence.snapshot_id: "snap-61f9a0a3b61dbcc3"`, 8
-  `kpi_names`, 5 sources, 13 `provenance` ids and `provenance_rejected: 0`. Two consecutive live
-  calls returned the same `snapshot_id`, differing only in `quality.evaluated_at_epoch`. The
-  deployed `snapshot_id` differs from the local one (`snap-38c77a0e903797c5`) because it hashes
-  the container's own build-time fixture — equal ids would have implied the container was
-  reporting on data it does not have. **NOT VERIFIED against the live revision**: the
-  `BAD`/`UNKNOWN` fail-closed branch was never triggered in the cloud (no bad data was pushed
-  into a deployed container) and `REAL_MODEL` is unverified because no LLM endpoint is
-  reachable from the container — which is exactly why it correctly reports `FALLBACK`. The
-  deployed revision also predates `be4ace3`, so it still contains the cumulative-DLQ defect
-  above; the container's DLQ is young enough not to have tripped it yet.
+- **The live Azure deployment runs the quality gate, at the same commit as HEAD's code.** Revision
+  `ca-factory-api--0000002` (weight 100, 1 replica, created 2026-09-30T17:14:02Z) references image
+  **by digest** `sha256:7c3e81b7698b7625ef44d7f76ee594d1201acb8622a5497b15d1401e5ed853e2`. The SLSA
+  attestation verifies (`gh attestation verify`, exit 0) and its
+  `resolvedDependencies[0].digest.gitCommit` is `be4ace3ad14330cb92c40d5a63fa27c0544ae0ac` — the
+  canonical code SHA, not an approximation. A tag `factory-gate-dlq-fix-2026-09-30` pins that commit
+  so the workflow's commit-SHA image naming produced an exact-match artifact. Probing live
+  `/api/v1/report` returns `generation_mode: "FALLBACK"`, `status: "OK"`, `quality.status: "GOOD"`
+  ("all checks passed", 5/5 checks ok: `datasets_present`, `datasets_non_empty`,
+  `kpi_inputs_present`, `kpi_values_finite`, `quarantine_rate`), `evidence.snapshot_id:
+  "snap-61f9a0a3b61dbcc3"`, 8 `kpi_names`, 5 sources, 13 `provenance` ids and
+  `provenance_rejected: 0`. Two consecutive live calls returned the same `snapshot_id`, differing
+  only in `quality.evaluated_at_epoch`. The deployed `snapshot_id` differs from the local one
+  (`snap-38c77a0e903797c5`) because it hashes the container's own build-time fixture — equal ids
+  would have implied the container was reporting on data it does not have.
+- **Q1 re-verified in the cloud, without writing bad data to production.** Ten consecutive
+  `POST /api/v1/refresh` calls, each returning `{"success": true}` in 3.6–7.0 s, with
+  `/api/v1/report` read after each one. The quarantine rate was `0.009` on all 11 observations and
+  the check detail carried `scope=current_etl_run` every time, with quality `GOOD` at 5/5. Every
+  refresh re-runs the ETL, which re-quarantines the same bad rows and appends them to the DLQ
+  again, so the lifetime file total grew each time while the rate stayed flat — the old code
+  would have produced a monotonically rising rate. *Derived, not directly observed:*
+  `dlq_cumulative_rows` is an internal audit field and is not exposed in the response body.
+- **NOT VERIFIED against the live revision**: the `BAD`/`UNKNOWN` fail-closed branch was never
+  triggered in the cloud (test-covered at unit and HTTP level only, and no bad data was pushed
+  into a deployed container on purpose) and `REAL_MODEL` is unverified because no LLM endpoint is
+  reachable from the container — which is exactly why the live endpoint reports `FALLBACK`.
 - **API-key enforcement in the cloud revision is open mode.** The Container App template has no
   environment variables (`environmentVariables: null`) and `FACTORY_API_KEY` is not provisioned, so
   `ApiKeyMiddleware` passes all traffic through by design (`app/api/security.py:35-36`). The

@@ -90,13 +90,22 @@ questions and a change to documentation does not move the deployed artifact:
 
 | Identity | Value | Means |
 |---|---|---|
-| **Source** | `4e4e8b58d0551a080ea6750deb3f2a1ce9c98265` | the commit the running image was built from |
-| **Artifact** | `sha256:675fd4f2782308fb2779d29130cdd17006bc449958613d6fc023d3c31c5728f2` | OCI digest of the pushed image (buildx attestation) |
-| **Runtime** | revision `ca-factory-api--0000001`, traffic weight 100 | the revision actually serving traffic |
+| **Source** | `be4ace3ad14330cb92c40d5a63fa27c0544ae0ac` | the commit the running image was built from |
+| **Artifact** | `sha256:7c3e81b7698b7625ef44d7f76ee594d1201acb8622a5497b15d1401e5ed853e2` | OCI digest of the pushed image; the Container App references **this digest, not a tag** |
+| **Runtime** | revision `ca-factory-api--0000002`, traffic weight 100, 1 active replica | the revision actually serving traffic |
 
 The chain is: commit → CI build provenance → image digest → Azure revision →
 runtime probes. The commit is not a hash of the digest and must not be read as
-one; the provenance attestation is what links them.
+one; the provenance attestation is what links them, and here it is machine
+checked rather than asserted:
+
+```bash
+gh attestation verify \
+  oci://ghcr.io/imtarget05/factory-data-automation-v-ai-reporting-platform-factory-api:be4ace3ad14330cb92c40d5a63fa27c0544ae0ac \
+  --repo imtarget05/Factory-Data-Automation-v-AI-Reporting-Platform
+# -> SLSA v1 provenance, resolvedDependencies[0].digest.gitCommit = be4ace3ad143…
+```
+
 
 ### Runtime verification (probed against the live URL, 2026-09-30)
 
@@ -109,16 +118,19 @@ one; the provenance attestation is what links them.
 | `/metrics` | 200, `factory_data_up 1` |
 | `/metrics-evil` | 404 — the safe-path matcher is exact-or-boundary, so a prefix-looking path is not treated as open |
 
-The gate runs live. Revision `ca-factory-api--gate` (created 2026-09-30T15:23:59Z,
-image `4ea75e5`, digest `sha256:e792a653…`, weight 100) carries the gate, and the
-response above was read from the deployed endpoint rather than from a config
-file. Two consecutive live calls returned the same `snapshot_id`, differing only
-in `quality.evaluated_at_epoch`.
+The gate runs live. Revision `ca-factory-api--0000002` (created 2026-09-30T17:14:02Z,
+weight 100) runs commit `be4ace3` **by digest**
+`ghcr.io/imtarget05/…-factory-api@sha256:7c3e81b7698b…`, not by tag. The SLSA
+provenance attestation verifies independently with `gh attestation verify` and
+resolves to git commit `be4ace3ad14330cb…`, so the chain
+commit → workflow run → digest → revision → probe is closed rather than asserted.
 
-That deployed revision predates commit `be4ace3`, which fixed a defect in the
-gate's quarantine-rate metric (see *Known gaps*). The container's DLQ is young
-enough that it has not tripped yet, so its `GOOD` verdict is not evidence the
-current code is correct.
+Two consecutive live calls returned the same `snapshot_id`, differing only in
+`quality.evaluated_at_epoch`. Ten consecutive `POST /api/v1/refresh` calls, each
+returning `{"success": true}`, left the quarantine rate flat at `0.009` with
+`scope=current_etl_run` — the deployed revision is running the run-scoped counter
+from `be4ace3`, so it can no longer drift into `BAD` merely by being run more
+often. That was verified without writing bad data to the deployed service.
 
 ### A deployment bug worth reading about
 
@@ -200,12 +212,6 @@ was not actually neutralized.
 
 ### Known gaps | Khoảng trống đã biết
 
-- The deployed revision `ca-factory-api--gate` (commit `4ea75e5`) predates
-  `be4ace3`, so it still contains the cumulative-DLQ defect: the gate divided
-  the append-only quarantine file's lifetime row count by the current run's rows,
-  which climbs every run until it blocks reporting on clean data. It surfaced
-  only against a real 33-run-old DLQ — never in tests, which pass fake counts,
-  and never against a fresh tree. Redeploying `be4ace3` closes it.
 - The `BAD`/`UNKNOWN` fail-closed branch has **never been exercised against the
   live revision**. It is covered at unit and HTTP test level; no bad data has been
   pushed into a deployed container.

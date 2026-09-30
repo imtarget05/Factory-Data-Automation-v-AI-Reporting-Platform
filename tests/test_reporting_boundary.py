@@ -170,13 +170,22 @@ def test_quarantine_rate_scoped_to_current_run_not_cumulative_dlq(client, monkey
         w = csv.writer(fh)
         w.writerow(q.QUARANTINE_COLUMNS)
         for i in range(5000):
-            w.writerow(["2020-01-01T00:00:00", "production", "production.csv",
-                        i, "Target_Qty", "-5", "greater_than_equal"])
+            w.writerow(
+                [
+                    "2020-01-01T00:00:00",
+                    "production",
+                    "production.csv",
+                    i,
+                    "Target_Qty",
+                    "-5",
+                    "greater_than_equal",
+                ]
+            )
     monkeypatch.setattr(q, "DATA_QUARANTINE_FILE", str(huge), raising=False)
-    monkeypatch.setattr("app.api.main.quarantine_summary",
-                        lambda: dict(q.quarantine_summary(str(huge))))
-    monkeypatch.setattr("app.api.main.quarantine_run_summary",
-                        lambda: q.quarantine_run_summary())
+    monkeypatch.setattr(
+        "app.api.main.quarantine_summary", lambda: dict(q.quarantine_summary(str(huge)))
+    )
+    monkeypatch.setattr("app.api.main.quarantine_run_summary", lambda: q.quarantine_run_summary())
 
     assert main.refresh_data(), "ETL produced no datasets"
 
@@ -184,22 +193,23 @@ def test_quarantine_rate_scoped_to_current_run_not_cumulative_dlq(client, monkey
     assert ctx["scope"] == "current_etl_run"
     assert ctx["dlq_cumulative_rows"] >= 5000, "history is still counted, only for reporting"
     assert ctx["rejected"] < ctx["dlq_cumulative_rows"] // 10, (
-        "rejected must be this run's rejects, not the file's lifetime total")
+        "rejected must be this run's rejects, not the file's lifetime total"
+    )
 
-    report = AIReportGenerator().generate_report(
-        main._kpis, [], main._datasets, quarantine=ctx)
+    report = AIReportGenerator().generate_report(main._kpis, [], main._datasets, quarantine=ctx)
     assert report["quality"]["status"] == "GOOD", report["quality"]["reason"]
-    rate_check = next(c for c in report["quality"]["checks"]
-                      if c["name"] == "quarantine_rate")
+    rate_check = next(c for c in report["quality"]["checks"] if c["name"] == "quarantine_rate")
     assert rate_check["ok"] is True
     assert "scope=current_etl_run" in rate_check["detail"]
 
 
 def test_absent_run_counters_are_not_reported_as_a_clean_zero_rate():
     """No ETL in-process means unknown, not zero."""
-    d = evaluate_quality(datasets=make_datasets(), kpis=make_kpis(),
-                         quarantine={"passed": 100, "rejected": None,
-                                     "scope": "not_provided"})
+    d = evaluate_quality(
+        datasets=make_datasets(),
+        kpis=make_kpis(),
+        quarantine={"passed": 100, "rejected": None, "scope": "not_provided"},
+    )
     qc = next(c for c in d.checks if c["name"] == "quarantine_rate")
     assert "not_provided" in qc["detail"]
     assert "rate=" not in qc["detail"], "an unknown count must not print a rate"

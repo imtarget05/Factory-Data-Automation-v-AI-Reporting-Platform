@@ -306,11 +306,20 @@ def _quality_context(datasets: dict) -> dict:
     counts = quarantine_run_summary()
     passed = int(sum(len(df) for df in (datasets or {}).values() if hasattr(df, "__len__")))
     if not counts:
-        return {"passed": passed, "rejected": None, "by_dataset": {},
-                "scope": "not_provided", "dlq_cumulative_rows": int(sum(quarantine_summary().values()))}
-    return {"passed": passed, "rejected": int(sum(counts.values())),
-            "by_dataset": counts, "scope": "current_etl_run",
-            "dlq_cumulative_rows": int(sum(quarantine_summary().values()))}
+        return {
+            "passed": passed,
+            "rejected": None,
+            "by_dataset": {},
+            "scope": "not_provided",
+            "dlq_cumulative_rows": int(sum(quarantine_summary().values())),
+        }
+    return {
+        "passed": passed,
+        "rejected": int(sum(counts.values())),
+        "by_dataset": counts,
+        "scope": "current_etl_run",
+        "dlq_cumulative_rows": int(sum(quarantine_summary().values())),
+    }
 
 
 @app.get("/api/v1/report")

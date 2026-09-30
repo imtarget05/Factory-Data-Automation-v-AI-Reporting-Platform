@@ -26,9 +26,18 @@ paths = [
   '''docs/evidence/images/''',
   '''docs/RECRUITER-EVIDENCE\.md''',
 ]
-# Narrow: only the image reference itself is allowlisted. A finding must match
-# BOTH the paths above AND this regex (gitleaks ANDs criteria within one
-# entry), so a real credential added to these files still fails the scan.
+# Narrow: a finding must match BOTH the path AND one of these regexes
+# (gitleaks ANDs criteria inside a single allowlist entry), so a real credential
+# added to these files still fails the scan.
+#
+# Three shapes of the same fact appear in evidence:
+#   1. ghcr.io/.../factory-api:<tag>       image reference
+#   2. ghcr.io/.../factory-api@sha256:...  digest-pinned reference
+#   3. `sha256:<64 hex>`                   the bare digest, cited on its own
+# All three are content addresses. Case 3 was added after CI flagged it: the
+# digest was written without the registry prefix, so the ghcr.io pattern missed
+# it and the scan failed on a document that contains no secret.
 regexes = [
   '''ghcr\.io/\S*factory-api\S*''',
+  '''\bsha256:[a-f0-9]{64}\b''',
 ]
