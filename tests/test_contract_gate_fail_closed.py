@@ -44,8 +44,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import app.data_contracts as DC
-import app.etl.pipeline as pipeline
+import app.data_contracts as dc
 from app.etl.pipeline import ContractGateUnavailable, apply_contract_gate
 
 GOOD_ROW = {
@@ -89,7 +88,7 @@ def test_f6_validator_internal_exception_fails_closed(monkeypatch, exc):
     exception: a caller that catches TypeError to mean "bad row data" would
     otherwise treat a contract bug as a data problem and skip the file.
     """
-    monkeypatch.setattr(DC, "validate_rows", _boom(exc))
+    monkeypatch.setattr(dc, "validate_rows", _boom(exc))
     df = _frame(Reject_Qty=9999)
 
     with pytest.raises(ContractGateUnavailable) as caught:
@@ -206,7 +205,7 @@ def test_f5_mixed_batch_partitions_with_zero_silent_loss(tmp_path):
 
 def test_invariant_validation_infra_failure_is_not_data_acceptance(monkeypatch):
     """VALIDATION_INFRA_FAILURE MUST NOT BECOME DATA_ACCEPTANCE."""
-    monkeypatch.setattr(DC, "validate_rows", _boom(TypeError("contract bug")))
+    monkeypatch.setattr(dc, "validate_rows", _boom(TypeError("contract bug")))
     df = _frame(Reject_Qty=9999)
 
     with pytest.raises(ContractGateUnavailable):
@@ -247,11 +246,11 @@ def test_nc_unknown_dataset_still_skips_gracefully():
 def test_nc_loader_failure_still_reports_rather_than_raising():
     """A missing raw file is a different failure from a broken contract."""
     with pytest.raises(ValueError):
-        DC.validate_csv("/nonexistent/file.csv", "production")
+        dc.validate_csv("/nonexistent/file.csv", "production")
 
 def test_f6b_infra_failure_does_not_return_rows(monkeypatch):
     """The frame must not come back at all -- returning it IS the defect."""
-    monkeypatch.setattr(DC, "validate_rows", _boom(TypeError("boom")))
+    monkeypatch.setattr(dc, "validate_rows", _boom(TypeError("boom")))
     df = _frame(Reject_Qty=9999)
 
     try:

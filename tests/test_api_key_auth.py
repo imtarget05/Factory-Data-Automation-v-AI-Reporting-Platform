@@ -14,7 +14,6 @@ Auth model (from app/api/security.py — single shared key, no JWT/roles):
   refresh semantics (no refresh flow).
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -51,23 +50,23 @@ def open_mode(monkeypatch):
     monkeypatch.delenv("FACTORY_API_KEY", raising=False)
 
 
-def test_A1_anonymous_protected_rejected(client, enforced):
+def test_a1_anonymous_protected_rejected(client, enforced):
     r = client.get("/api/v1/kpis")
     assert r.status_code == 401
     assert "X-Factory-API-Key" in r.json()["detail"]
 
 
-def test_A1_anonymous_post_protected_rejected(client, enforced):
+def test_a1_anonymous_post_protected_rejected(client, enforced):
     r = client.post("/api/v1/query", json={"frame": "x"})
     assert r.status_code == 401
 
 
-def test_A2_wrong_key_rejected(client, enforced):
+def test_a2_wrong_key_rejected(client, enforced):
     r = client.get("/api/v1/kpis", headers={"X-Factory-API-Key": "wrong"})
     assert r.status_code == 401
 
 
-def test_A3_correct_key_passes_auth_layer(client, enforced):
+def test_a3_correct_key_passes_auth_layer(client, enforced):
     r = client.get("/api/v1/kpis", headers={"X-Factory-API-Key": TEST_KEY})
     assert r.status_code != 401
 

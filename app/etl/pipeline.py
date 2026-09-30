@@ -236,7 +236,7 @@ def load_and_clean_all(directory: Optional[str] = None) -> dict[str, pd.DataFram
     return datasets
 
 
-class ContractGateUnavailable(RuntimeError):
+class ContractGateUnavailable(RuntimeError):  # noqa: N818 - intentional public API name (raised + caught by name in tests/callers)
     """The contract layer could not be evaluated, so no row can be trusted.
 
     P0-03. This exists to make one distinction impossible to get wrong:

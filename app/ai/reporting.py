@@ -3,6 +3,7 @@ AI Reporting Module — powered by local Qwen2.5 via Ollama.
 Zero API costs, fully offline, runs entirely on your machine.
 """
 
+import hashlib as _hashlib
 import json
 import logging
 import math
@@ -20,8 +21,6 @@ logger = get_logger("ai", "reporting")
 
 # Structured evidence + provenance helpers (module level so tests and the API
 # can build/verify the SAME deterministic artifacts the generator uses).
-import hashlib as _hashlib
-
 
 _MAX_EVIDENCE_RECORDS = 10
 

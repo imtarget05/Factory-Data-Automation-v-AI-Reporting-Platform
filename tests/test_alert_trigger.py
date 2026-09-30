@@ -52,7 +52,6 @@ def test_alert_condition_triggers_at_runtime():
     mgr = AlertManager()
     alerts = mgr.check_all(_breach_datasets(), _breach_kpis())
     assert alerts, "no alerts fired on a deliberately breaching snapshot"
-    by_cat = {a.category: a for a in alerts}
     quality = [a for a in alerts if a.category == "Quality"]
     assert quality, [a.category for a in alerts]
     q = quality[0]

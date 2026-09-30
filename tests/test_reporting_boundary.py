@@ -25,10 +25,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from fastapi.testclient import TestClient  # noqa: E402
+from test_ai_quality_gate import FakeLLM, make_datasets, make_generator, make_kpis  # noqa: E402
 
 import app.api.main as main  # noqa: E402
 from app.ai.reporting import AIReportGenerator, _json_safe  # noqa: E402
-from test_ai_quality_gate import FakeLLM, make_datasets, make_generator, make_kpis  # noqa: E402
 
 _JSON_NATIVE = (bool, int, float, str, type(None))
 
