@@ -105,16 +105,20 @@ one; the provenance attestation is what links them.
 | `/api/v1/health` | 200 `{"status":"healthy","data_loaded":true}` |
 | `/api/v1/data` | 200, 5 datasets, 26 132 rows |
 | `/api/v1/kpis` | 200, `daily_production` 90 rows |
-| `/api/v1/report` | 200, executive summary |
+| `/api/v1/report` | 200, `generation_mode=FALLBACK`, `quality.status=GOOD` (5/5 checks), `evidence.snapshot_id=snap-61f9a0a3b61dbcc3`, 13 `provenance` ids, `provenance_rejected=0` |
 | `/metrics` | 200, `factory_data_up 1` |
 | `/metrics-evil` | 404 — the safe-path matcher is exact-or-boundary, so a prefix-looking path is not treated as open |
 
-**The deployed revision predates the quality gate.** The live `/api/v1/report`
-returns `title/date/summary/key_metrics/problems/recommendations/risks/root_causes`
-and **no** `generation_mode`, `quality`, `evidence` or `provenance` keys. The gate
-is committed to the working tree and tested locally; shipping it to Azure is a
-separate step (see *Known gaps* below). Verification here means "the running image
-is the commit named above", not "the running image is the working tree".
+The gate runs live. Revision `ca-factory-api--gate` (created 2026-09-30T15:23:59Z,
+image `4ea75e5`, digest `sha256:e792a653…`, weight 100) carries the gate, and the
+response above was read from the deployed endpoint rather than from a config
+file. Two consecutive live calls returned the same `snapshot_id`, differing only
+in `quality.evaluated_at_epoch`.
+
+That deployed revision predates commit `be4ace3`, which fixed a defect in the
+gate's quarantine-rate metric (see *Known gaps*). The container's DLQ is young
+enough that it has not tripped yet, so its `GOOD` verdict is not evidence the
+current code is correct.
 
 ### A deployment bug worth reading about
 
@@ -196,13 +200,24 @@ was not actually neutralized.
 
 ### Known gaps | Khoảng trống đã biết
 
-- The Azure revision `ca-factory-api--0000001` (commit `4e4e8b58`) does **not**
-  contain the quality gate; the live report response has no
-  `generation_mode`/`quality`/`evidence` keys. Deploying the gate is the next step.
+- The deployed revision `ca-factory-api--gate` (commit `4ea75e5`) predates
+  `be4ace3`, so it still contains the cumulative-DLQ defect: the gate divided
+  the append-only quarantine file's lifetime row count by the current run's rows,
+  which climbs every run until it blocks reporting on clean data. It surfaced
+  only against a real 33-run-old DLQ — never in tests, which pass fake counts,
+  and never against a fresh tree. Redeploying `be4ace3` closes it.
+- The `BAD`/`UNKNOWN` fail-closed branch has **never been exercised against the
+  live revision**. It is covered at unit and HTTP test level; no bad data has been
+  pushed into a deployed container.
+- `REAL_MODEL` mode is unverified on Azure: no LLM endpoint is reachable from the
+  container, which is exactly why the live endpoint correctly reports `FALLBACK`.
 - `FACTORY_API_KEY` is not set in the deployed container, so the API-key
   middleware is in documented open mode there. The middleware's enforced path is
   covered by `tests/test_api_key_auth.py`, but production enforcement requires the
   secret to be provisioned.
+- No cold-start SLA is claimed: probes timed out at 15 s and 60 s on
+  scale-from-zero before a 90 s budget answered in 0.2 s, and the revision
+  template configures no probes.
 - No alerting is wired from the block path to an external channel yet; block
   events exist only in the application log.
 
@@ -283,12 +298,13 @@ API docs at **http://localhost:8000/docs**
 python -m pytest tests/ -q
 ```
 
-**Verified: 288 passed, 5 skipped, 4 xfailed** at commit `b0358ba` (gate
+**Verified: 290 passed, 5 skipped, 4 xfailed** at commit `be4ace3` (gate
 implementation in `2477cf8`). The 4 `xfailed` are the mutation-detection
 controls `M1`–`M4` in `tests/test_ai_quality_mutations.py` — they are *supposed*
 to fail, and passing-by-failure is how they prove the gate tests detect a
-neutralized check. If `258 passed, 5 skipped` (commit `4e4e8b58`) is what you
-see, you are on the pre-Phase-C tree.
+neutralized check. If `288 passed, 5 skipped, 4 xfailed` (commit `9192da1`) or
+`258 passed, 5 skipped` (commit `4e4e8b58`) is what you see, you are on an
+earlier tree.
 If `data/raw/` is empty, run `python -m scripts.generate_sample_data` first —
 `tests/conftest.py` also falls back to a stdlib seed, but that smaller dataset
 is not what the numbers above were measured on.
@@ -364,13 +380,13 @@ FACTORY_NAME=Smart Factory Alpha
 ## 🧪 Test Results | Kết Quả Kiểm Thử
 
 ```
-288 passed, 5 skipped, 4 xfailed
+290 passed, 5 skipped, 4 xfailed
 ```
 
 The 4 `xfailed` are mutation controls (`M1`–`M4`), not flaky tests — see
 *Data-quality gate for AI reporting*.
 
-**Reproduce:** `python -m pytest tests/ -q` — measured at commit `b0358ba` from a
+**Reproduce:** `python -m pytest tests/ -q` — measured at commit `be4ace3` from a
 clean checkout, with the blessed fixture:
 
 ```

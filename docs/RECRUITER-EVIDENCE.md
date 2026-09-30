@@ -233,8 +233,23 @@ and nothing in the repository could regenerate them.
   stamp, DLQ →
   gate, blocked-is-200-not-500, blocked-over-HTTP-makes-zero-LLM-calls,
   good-over-HTTP-makes-one-LLM-call, and gate/block logging events.
+- **A fourth real defect, found by re-running the suite against a real DLQ**: `GET /api/v1/report`
+  returned `status: BLOCKED` with `quarantine rate 0.555 exceeds 0.5` on **clean** data. Root
+  cause: `_quality_context()` divided the *lifetime* row count of the append-only
+  `data/quarantine/corrupt_records.csv` (32,029 rows accumulated over 33 ETL runs) by the
+  *current* run's surviving rows (~26,119). The rate therefore climbs on every run and would
+  permanently block reporting regardless of data quality — a failure whose trigger is simply
+  running the app more. Fixed at `be4ace3`: `quarantine_run_summary()` counts this run's rejects
+  and is reset by `load_and_clean_all` at the start of every run, while `quarantine_summary()`
+  keeps the lifetime total as the audit view only (reported as `dlq_cumulative_rows`). An
+  absent run counter is now `rejected=None` → `not_provided`, because "no ETL ran in this
+  process" is not the same claim as "nothing was quarantined". Two regression tests: a
+  5,000-row lifetime DLQ must leave the gate `GOOD` with `scope=current_etl_run`, and an absent
+  counter must print no rate at all. **No existing test could have caught this** — the unit
+  tests pass fake quarantine dicts and the HTTP tests use a fresh tmp tree; it needed the real,
+  33-run-old DLQ meeting a real ETL run.
 - **RUNTIME EVIDENCE**:
-  - `python -m pytest -q` → `288 passed, 5 skipped, 4 xfailed in 39.46s` at commit `b0358ba`.
+  - `python -m pytest -q` → `290 passed, 5 skipped, 4 xfailed in 18.72s` at commit `be4ace3`.
   - Mutation controls `tests/test_ai_quality_mutations.py` `M1`–`M4` monkeypatch each check
     into a no-op (finite check, dataset presence, quarantine rate, provenance membership) and
     assert the gate then lets bad data through. All four are `xfail` **by design** and reported
@@ -301,18 +316,24 @@ and nothing in the repository could regenerate them.
   the workflow.
 - **Docker** — `docker/Dockerfile` and `docker/docker-compose.yml` exist; I did not build the image.
   **NOT VERIFIED.**
-- **The live Azure deployment does not yet run the quality gate.** Revision
-  `ca-factory-api--0000001` (traffic weight 100, created 2026-09-30T13:27:17Z) runs image tag
-  `...factory-api:4e4e8b58d0551a080ea6750deb3f2a1ce9c98265`, digest
-  `sha256:675fd4f2782308fb2779d29130cdd17006bc449958613d6fc023d3c31c5728f2` (digest confirmed
-  independently with `docker buildx imagetools inspect`). That commit is `4e4e8b58`, which predates
-  `app/data_contracts/quality_gate.py` (still untracked in git). Probing the live
-  `/api/v1/report` confirms it: the response has keys
-  `date, key_metrics, problems, recommendations, risks, root_causes, summary, title` and **no**
-  `generation_mode`, `quality`, `evidence` or `provenance`. The gate is verified locally and on
-  the test HTTP surface, **not** in the running cloud revision. Live `/api/v1/health`, `/data`,
-  `/kpis`, `/report` and `/metrics` all returned 200 when probed on 2026-09-30, and `/metrics-evil`
-  returned 404 (prefix-boundary matching works).
+- **The live Azure deployment does run the quality gate, but on an older commit than HEAD.**
+  Revision `ca-factory-api--gate` (traffic weight 100, created 2026-09-30T15:23:59Z) runs image
+  tag `...factory-api:4ea75e599200a50a87b0a235b9a5b3de9117dad3`, digest
+  `sha256:e792a653220ec80fdbb64d1b4dd94b22da3462c522da337693e8f72378ac7574` (digest confirmed
+  with `docker buildx imagetools inspect`). Probing live `/api/v1/report` returns
+  `generation_mode: "FALLBACK"`, `status: "OK"`, `quality.status: "GOOD"` ("all checks passed",
+  5/5 checks ok: `datasets_present`, `datasets_non_empty`, `kpi_inputs_present`,
+  `kpi_values_finite`, `quarantine_rate`), `evidence.snapshot_id: "snap-61f9a0a3b61dbcc3"`, 8
+  `kpi_names`, 5 sources, 13 `provenance` ids and `provenance_rejected: 0`. Two consecutive live
+  calls returned the same `snapshot_id`, differing only in `quality.evaluated_at_epoch`. The
+  deployed `snapshot_id` differs from the local one (`snap-38c77a0e903797c5`) because it hashes
+  the container's own build-time fixture — equal ids would have implied the container was
+  reporting on data it does not have. **NOT VERIFIED against the live revision**: the
+  `BAD`/`UNKNOWN` fail-closed branch was never triggered in the cloud (no bad data was pushed
+  into a deployed container) and `REAL_MODEL` is unverified because no LLM endpoint is
+  reachable from the container — which is exactly why it correctly reports `FALLBACK`. The
+  deployed revision also predates `be4ace3`, so it still contains the cumulative-DLQ defect
+  above; the container's DLQ is young enough not to have tripped it yet.
 - **API-key enforcement in the cloud revision is open mode.** The Container App template has no
   environment variables (`environmentVariables: null`) and `FACTORY_API_KEY` is not provisioned, so
   `ApiKeyMiddleware` passes all traffic through by design (`app/api/security.py:35-36`). The
