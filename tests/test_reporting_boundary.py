@@ -100,11 +100,13 @@ def test_json_safe_coerces_numpy_nan_and_frames():
 
 
 
-def test_real_data_reports_are_byte_identical_modulo_audit_stamp(client):
-    """Same inputs => same evidence snapshot and same canonical payload.
+def test_real_data_reports_are_deterministic_modulo_audit_stamp(client):
+    """Same inputs => same evidence snapshot and same canonical content.
 
-    Only `evaluated_at_epoch` (wall clock, by design) may differ; everything
-    the gate and provenance depend on must be a pure function of the data.
+    Only `evaluated_at_epoch` (wall clock, by design) is excluded. This is NOT
+    a claim that the whole HTTP response is byte-identical: it is a claim that
+    business evidence and quality-decision content are a pure function of the
+    input data, with evaluation time isolated as metadata.
     """
     import hashlib
 

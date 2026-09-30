@@ -229,7 +229,8 @@ and nothing in the repository could regenerate them.
   determinism (`:259`) and provenance set membership (`:273`).
   `tests/test_reporting_boundary.py` — 9 tests driving the real HTTP surface: JSON-native
   payload (regression for a 500, see below), `_json_safe` coercion of numpy/NaN/frames, no
-  false provenance count on fallback, byte-identical reports modulo the audit stamp, DLQ →
+  false provenance count on fallback, deterministic reports modulo the audit
+  stamp, DLQ →
   gate, blocked-is-200-not-500, blocked-over-HTTP-makes-zero-LLM-calls,
   good-over-HTTP-makes-one-LLM-call, and gate/block logging events.
 - **RUNTIME EVIDENCE**:
@@ -239,10 +240,14 @@ and nothing in the repository could regenerate them.
     assert the gate then lets bad data through. All four are `xfail` **by design** and reported
     as `4 xfailed`: they must never pass. If one passes, the mutation was not neutralized.
   - Determinism over the real 26 119-row dataset, two consecutive runs:
-    `snapshot=snap-38c77a0e903797c5` both times, canonical payload sha256
-    `68649edbce3c30f3a06c900d12a182d2` both times, `identical: True`. The only field that
-    varies is `quality.evaluated_at_epoch` (wall clock, renamed from `timestamp` precisely so
-    it cannot be mistaken for deterministic content).
+    `snapshot=snap-38c77a0e903797c5` both times, and the canonical JSON of
+    `{evidence, quality, provenance, generation_mode, status}` hashes to
+    `68649edbce3c30f3a06c900d12a182d2` both times. The single excluded field is
+    `quality.evaluated_at_epoch` (wall clock, renamed from `timestamp` precisely
+    so it cannot be mistaken for deterministic content). Stated precisely: the
+    business evidence and the quality-decision content are a pure function of the
+    input data, with evaluation time isolated as metadata. This is **not** a
+    claim that the entire HTTP response is byte-identical.
   - Live generation: `/api/v1/report` on the real data returned `quality=GOOD`,
     `mode=FALLBACK` (Ollama was not running — correctly labelled, not passed off as model
     output), `snapshot=snap-38c77a0e903797c5`.
