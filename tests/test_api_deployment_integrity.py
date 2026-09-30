@@ -13,6 +13,7 @@ These tests pin the corrected contract:
 
 Evidence: docs/evidence/factory_p1_triage.md
 """
+
 from __future__ import annotations
 
 import pytest
@@ -61,13 +62,17 @@ def populated_deployment(monkeypatch):
         "calculate_all_kpis",
         lambda ds: {"daily_production": pd.DataFrame({"Date": ["d1"], "v": [1]})},
     )
-    monkeypatch.setattr(api_main, "AlertManager", lambda *a, **k: type(
-        "AM", (), {"check_all": staticmethod(lambda d, kp: [])})())
+    monkeypatch.setattr(
+        api_main,
+        "AlertManager",
+        lambda *a, **k: type("AM", (), {"check_all": staticmethod(lambda d, kp: [])})(),
+    )
     api_main._datasets, api_main._kpis, api_main._alerts = None, None, None
     return {"production": frame}
 
 
 # --- data_is_loaded ---------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "value,expected",
@@ -81,6 +86,7 @@ def test_data_is_loaded_rejects_empty_dict(value, expected):
 
 
 # --- empty deployment -------------------------------------------------------
+
 
 def test_health_is_503_when_no_data(client, empty_deployment):
     response = client.get("/api/v1/health")
@@ -120,6 +126,7 @@ def test_refresh_data_reports_failure_and_clears_cache(empty_deployment):
 
 
 # --- populated deployment ---------------------------------------------------
+
 
 def test_health_is_200_when_data_loaded(client, populated_deployment):
     assert api_main.refresh_data() is True

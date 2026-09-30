@@ -9,6 +9,7 @@ Guards two things the gate alone cannot:
 2. A BLOCKED report is a well-formed 200 payload with `status: BLOCKED`,
    never an exception — and the LLM is not invoked.
 """
+
 import json
 import logging
 import sys
@@ -65,6 +66,7 @@ def _open_mode(monkeypatch):
 
 # ------------------------------------------------------- transport safety --
 
+
 def test_report_endpoint_returns_json_native_payload(client, monkeypatch):
     """No numpy/DataFrame may cross the HTTP boundary (was a 500)."""
     monkeypatch.setattr("app.ai.reporting.get_llm", lambda: FakeLLM(available=False))
@@ -94,10 +96,12 @@ def test_json_safe_coerces_numpy_nan_and_frames():
     assert coerced["rows"] == 2 and coerced["sample"][0]["a"] == 1
     ts = _json_safe(pd.Timestamp("2026-09-30"))
     assert isinstance(ts, str) and ts.startswith("2026-09-30")
-    nested = {"b": np.int64(1), "a": {"z": float("nan")}, }
+    nested = {
+        "b": np.int64(1),
+        "a": {"z": float("nan")},
+    }
     assert list(_json_safe(nested).keys()) == ["a", "b"]  # deterministic order
     json.dumps(_json_safe({"k": np.int64(3), "n": float("nan")}), allow_nan=False)
-
 
 
 def test_real_data_reports_are_deterministic_modulo_audit_stamp(client):
@@ -125,18 +129,29 @@ def test_real_data_reports_are_deterministic_modulo_audit_stamp(client):
             main._kpis, [], main._datasets, quarantine=main._quality_context(main._datasets)
         )
         blob = json.dumps(
-            canonical({"evidence": rep["evidence"], "quality": rep["quality"],
-                       "provenance": rep["provenance"],
-                       "mode": rep["generation_mode"], "status": rep["status"]}),
-            sort_keys=True, allow_nan=False)
+            canonical(
+                {
+                    "evidence": rep["evidence"],
+                    "quality": rep["quality"],
+                    "provenance": rep["provenance"],
+                    "mode": rep["generation_mode"],
+                    "status": rep["status"],
+                }
+            ),
+            sort_keys=True,
+            allow_nan=False,
+        )
         payloads.append((rep["evidence"]["snapshot_id"], blob))
 
     assert payloads[0][0] == payloads[1][0], "snapshot_id must be input-derived"
-    assert hashlib.sha256(payloads[0][1].encode()).hexdigest() == \
-           hashlib.sha256(payloads[1][1].encode()).hexdigest()
+    assert (
+        hashlib.sha256(payloads[0][1].encode()).hexdigest()
+        == hashlib.sha256(payloads[1][1].encode()).hexdigest()
+    )
 
 
 # ------------------------------------------------------ gate over HTTP -----
+
 
 def test_fallback_report_does_not_count_missing_citations(monkeypatch):
     """A deterministic fallback cites nothing: that is not a provenance breach."""
@@ -158,9 +173,7 @@ def test_quarantine_dlq_feeds_the_gate(client):
 
 def test_blocked_report_is_well_formed_200_not_500(client, monkeypatch):
     monkeypatch.setattr("app.ai.reporting.get_llm", lambda: FakeLLM(available=False))
-    monkeypatch.setattr(
-        main, "_quality_context", lambda ds: {"passed": 1, "rejected": 99}
-    )
+    monkeypatch.setattr(main, "_quality_context", lambda ds: {"passed": 1, "rejected": 99})
     r = client.get("/api/v1/report")
     assert r.status_code == 200, r.text[:200]
     body = r.json()
@@ -174,9 +187,7 @@ def test_blocked_report_is_well_formed_200_not_500(client, monkeypatch):
 def test_blocked_report_never_invokes_the_llm_over_http(client, monkeypatch):
     fake = FakeLLM(payload={"title": "should not run"})
     monkeypatch.setattr("app.ai.reporting.get_llm", lambda: fake)
-    monkeypatch.setattr(
-        main, "_quality_context", lambda ds: {"passed": 1, "rejected": 99}
-    )
+    monkeypatch.setattr(main, "_quality_context", lambda ds: {"passed": 1, "rejected": 99})
     r = client.get("/api/v1/report")
     assert r.status_code == 200
     assert fake.calls == 0, "LLM was invoked on a BLOCKED batch over HTTP"
@@ -194,6 +205,7 @@ def test_good_batch_does_invoke_the_llm_over_http(client, monkeypatch):
 
 
 # ------------------------------------------------------------ observability --
+
 
 def test_quality_gate_and_block_are_logged(monkeypatch, caplog):
     """The gate decision and every block are auditable through the existing

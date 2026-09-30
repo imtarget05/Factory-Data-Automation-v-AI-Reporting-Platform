@@ -21,6 +21,7 @@ Checks are deliberately simple and deterministic — no SLO platform: the
 invariant that matters is that a BAD/UNKNOWN decision can never reach the
 report generator as trusted input.
 """
+
 from __future__ import annotations
 
 import time
@@ -117,8 +118,13 @@ def evaluate_quality(datasets=None, kpis=None, quarantine=None) -> QualityDecisi
         kpis = dict(kpis) if kpis else {}
 
         missing = [d for d in REQUIRED_DATASETS if d not in datasets]
-        checks.append({"name": "datasets_present", "ok": not missing,
-                       "detail": f"missing={missing}" if missing else "all required present"})
+        checks.append(
+            {
+                "name": "datasets_present",
+                "ok": not missing,
+                "detail": f"missing={missing}" if missing else "all required present",
+            }
+        )
         if missing:
             failures.append(f"missing required dataset(s): {', '.join(missing)}")
 
@@ -128,25 +134,42 @@ def evaluate_quality(datasets=None, kpis=None, quarantine=None) -> QualityDecisi
             if df is None:
                 continue
             is_empty = bool(getattr(df, "empty", True)) if hasattr(df, "empty") else not df
-            source[f"dataset:{name}"] = int(getattr(df, "shape", [0])[0]) if hasattr(df, "shape") else 0
+            source[f"dataset:{name}"] = (
+                int(getattr(df, "shape", [0])[0]) if hasattr(df, "shape") else 0
+            )
             if is_empty:
                 empty.append(name)
-        checks.append({"name": "datasets_non_empty", "ok": not empty,
-                       "detail": f"empty={empty}" if empty else "all non-empty"})
+        checks.append(
+            {
+                "name": "datasets_non_empty",
+                "ok": not empty,
+                "detail": f"empty={empty}" if empty else "all non-empty",
+            }
+        )
         if empty:
             failures.append(f"empty validated dataset(s): {', '.join(empty)}")
 
         kpi_missing = [k for k in REQUIRED_KPIS if k not in kpis]
         if kpis:
-            checks.append({"name": "kpi_inputs_present", "ok": not kpi_missing,
-                           "detail": f"missing={kpi_missing}" if kpi_missing else "required KPIs present"})
+            checks.append(
+                {
+                    "name": "kpi_inputs_present",
+                    "ok": not kpi_missing,
+                    "detail": f"missing={kpi_missing}" if kpi_missing else "required KPIs present",
+                }
+            )
             if kpi_missing:
                 failures.append(f"missing required KPI input(s): {', '.join(kpi_missing)}")
 
         if kpis:
             finite_ok, finite_failures = _finite_check(kpis)
-            checks.append({"name": "kpi_values_finite", "ok": finite_ok,
-                           "detail": finite_failures[0] if finite_failures else "no NaN/inf"})
+            checks.append(
+                {
+                    "name": "kpi_values_finite",
+                    "ok": finite_ok,
+                    "detail": finite_failures[0] if finite_failures else "no NaN/inf",
+                }
+            )
             if not finite_ok:
                 failures.extend(finite_failures)
 
@@ -156,13 +179,23 @@ def evaluate_quality(datasets=None, kpis=None, quarantine=None) -> QualityDecisi
             total = passed + rejected
             rate = (rejected / total) if total else 0.0
             ok = rate <= QUARANTINE_RATE_MAX
-            checks.append({"name": "quarantine_rate", "ok": ok,
-                           "detail": f"rate={rate:.3f} (max={QUARANTINE_RATE_MAX})"})
+            checks.append(
+                {
+                    "name": "quarantine_rate",
+                    "ok": ok,
+                    "detail": f"rate={rate:.3f} (max={QUARANTINE_RATE_MAX})",
+                }
+            )
             if not ok:
                 failures.append(f"quarantine rate {rate:.3f} exceeds {QUARANTINE_RATE_MAX}")
         else:
-            checks.append({"name": "quarantine_rate", "ok": True,
-                           "detail": "not_provided (row-level gate already quarantined)"})
+            checks.append(
+                {
+                    "name": "quarantine_rate",
+                    "ok": True,
+                    "detail": "not_provided (row-level gate already quarantined)",
+                }
+            )
 
         period = {}
         for name in ("production", "machine"):
@@ -173,9 +206,19 @@ def evaluate_quality(datasets=None, kpis=None, quarantine=None) -> QualityDecisi
 
         status = GOOD if not failures else BAD
         reason = "all checks passed" if not failures else "; ".join(failures)[:500]
-        return QualityDecision(status=status, checks=checks, failures=failures,
-                               source=source, period=period, reason=reason)
+        return QualityDecision(
+            status=status,
+            checks=checks,
+            failures=failures,
+            source=source,
+            period=period,
+            reason=reason,
+        )
     except Exception as exc:  # noqa: BLE001 - gate failure must fail closed
         return QualityDecision(
-            status=UNKNOWN, checks=checks, failures=failures, source=source,
-            reason=f"quality evaluation error: {type(exc).__name__}: {exc}"[:500])
+            status=UNKNOWN,
+            checks=checks,
+            failures=failures,
+            source=source,
+            reason=f"quality evaluation error: {type(exc).__name__}: {exc}"[:500],
+        )

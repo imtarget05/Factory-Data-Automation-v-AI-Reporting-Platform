@@ -42,7 +42,10 @@ def _json_safe(obj, depth: int = 0):
     if depth > 4:
         return str(obj)
     if isinstance(obj, dict):
-        return {str(k): _json_safe(v, depth + 1) for k, v in sorted(obj.items(), key=lambda kv: str(kv[0]))}
+        return {
+            str(k): _json_safe(v, depth + 1)
+            for k, v in sorted(obj.items(), key=lambda kv: str(kv[0]))
+        }
     if isinstance(obj, (list, tuple)):
         return [_json_safe(v, depth + 1) for v in obj]
     if isinstance(obj, (set, frozenset)):
@@ -56,9 +59,11 @@ def _json_safe(obj, depth: int = 0):
                 _json_safe(rec, depth + 1)
                 for rec in frame.head(_MAX_EVIDENCE_RECORDS).to_dict(orient="records")
             ]
-            return {"rows": int(frame.shape[0]),
-                    "columns": [str(c) for c in frame.columns],
-                    "sample": records}
+            return {
+                "rows": int(frame.shape[0]),
+                "columns": [str(c) for c in frame.columns],
+                "sample": records,
+            }
         except Exception:  # noqa: BLE001 - fall through to string form
             return str(obj)
     if hasattr(obj, "item") and not isinstance(obj, (dict, list)):
@@ -112,7 +117,10 @@ def extract_kpi_evidence(kpis: dict, datasets: dict, decision) -> dict:
     }
     canonical = json.dumps(
         {"kpis": evidence["kpis"], "sources": evidence["sources"]},
-        sort_keys=True, ensure_ascii=False, default=str)
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
     evidence["snapshot_id"] = "snap-" + _hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
     return evidence
 
@@ -131,7 +139,6 @@ def validate_provenance(provenance_ids, evidence: dict) -> list:
         return ["<provenance not a list>"]
     authorized = set((evidence or {}).get("source_ids", []))
     return [str(pid) for pid in provenance_ids if str(pid) not in authorized]
-
 
 
 class AIReportGenerator:
@@ -207,8 +214,9 @@ class AIReportGenerator:
 
         return "\n".join(lines)
 
-    def generate_report(self, kpis: dict, alerts: list[dict], datasets: dict,
-                        quarantine: dict | None = None) -> dict:
+    def generate_report(
+        self, kpis: dict, alerts: list[dict], datasets: dict, quarantine: dict | None = None
+    ) -> dict:
         """Quality-gated AI report: the deterministic gate — not the LLM —
         authorizes whether reporting may proceed at all.
 
@@ -222,15 +230,21 @@ class AIReportGenerator:
         # --- deterministic Data Quality authorization boundary -------------
         decision = evaluate_quality(datasets=datasets, kpis=kpis, quarantine=quarantine)
         log_event(
-            logger, "quality_gate_decision", component="ai_reporting",
-            status=decision.status, reason=decision.reason,
+            logger,
+            "quality_gate_decision",
+            component="ai_reporting",
+            status=decision.status,
+            reason=decision.reason,
             failed_checks=[c["name"] for c in decision.checks if not c["ok"]],
         )
         if decision.status != GOOD:
             # BAD or UNKNOWN: fail closed. The LLM is never invoked.
             log_event(
-                logger, "report_blocked", level=logging.WARNING,
-                component="ai_reporting", status=decision.status,
+                logger,
+                "report_blocked",
+                level=logging.WARNING,
+                component="ai_reporting",
+                status=decision.status,
                 reason=decision.reason,
             )
             return self._blocked_report(decision)
@@ -330,9 +344,7 @@ Respond ONLY with valid JSON. No markdown, no code blocks, no explanation."""
         # violation: rejected must stay 0, not count "no provenance key".
         rejected = validate_provenance(llm_prov, evidence) if llm_prov is not None else []
         accepted = (
-            [p for p in llm_prov if str(p) not in rejected]
-            if isinstance(llm_prov, list)
-            else []
+            [p for p in llm_prov if str(p) not in rejected] if isinstance(llm_prov, list) else []
         )
         report = dict(report or {})
         report["generation_mode"] = mode
@@ -342,8 +354,11 @@ Respond ONLY with valid JSON. No markdown, no code blocks, no explanation."""
         report["evidence"] = evidence
         report["quality"] = decision.to_dict()
         log_event(
-            logger, "report_provenance", component="ai_reporting",
-            snapshot_id=evidence["snapshot_id"], mode=mode,
+            logger,
+            "report_provenance",
+            component="ai_reporting",
+            snapshot_id=evidence["snapshot_id"],
+            mode=mode,
             provenance_rejected=len(rejected),
         )
         return report

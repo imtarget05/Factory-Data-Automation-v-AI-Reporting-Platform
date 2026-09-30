@@ -3,6 +3,7 @@ condition fires through the existing AlertManager — no new observability
 framework. Also proves the quality-gate/report events reuse the existing
 structured logger (asserted via caplog in test_quality_gate_logs_event).
 """
+
 import sys
 from pathlib import Path
 
@@ -18,32 +19,57 @@ pd = pytest.importorskip("pandas")
 
 
 def _breach_kpis():
-    daily = pd.DataFrame({
-        "Date": ["2026-09-30"], "Total_Target": [300], "Total_Actual": [240],
-        "Achievement_Rate_pct": [76.0], "Reject_Rate_pct": [12.0],
-        "Yield_pct": [88.0]})
+    daily = pd.DataFrame(
+        {
+            "Date": ["2026-09-30"],
+            "Total_Target": [300],
+            "Total_Actual": [240],
+            "Achievement_Rate_pct": [76.0],
+            "Reject_Rate_pct": [12.0],
+            "Yield_pct": [88.0],
+        }
+    )
     return {
         "daily_production": daily,
-        "inventory_kpi": pd.DataFrame({
-            "Total_Stock": [50], "Stock_Value": [500.0],
-            "Products_Below_Reorder": [3]}),
-        "oee": pd.DataFrame({"Date": ["2026-09-30"], "OEE_pct": [70.0],
-                             "Availability_pct": [80.0], "Performance_pct": [90.0],
-                             "Quality_pct": [97.0]}),
+        "inventory_kpi": pd.DataFrame(
+            {"Total_Stock": [50], "Stock_Value": [500.0], "Products_Below_Reorder": [3]}
+        ),
+        "oee": pd.DataFrame(
+            {
+                "Date": ["2026-09-30"],
+                "OEE_pct": [70.0],
+                "Availability_pct": [80.0],
+                "Performance_pct": [90.0],
+                "Quality_pct": [97.0],
+            }
+        ),
     }
 
 
 def _breach_datasets():
     dates = pd.to_datetime(["2026-09-30"])
     return {
-        "machine": pd.DataFrame({
-            "Date": dates, "Machine_ID": ["M-01"], "Status": ["STOP"],
-            "Downtime_min": [45.0], "Speed_RPM": [0.0],
-            "Temperature_C": [55.0], "Vibration_mm": [2.0],
-            "Power_Usage_pct": [10.0]}),
-        "inventory": pd.DataFrame({
-            "Date": dates, "Product": ["A"], "Stock_Qty": [50],
-            "Reorder_Point": [100], "Unit_Price": [10.0]}),
+        "machine": pd.DataFrame(
+            {
+                "Date": dates,
+                "Machine_ID": ["M-01"],
+                "Status": ["STOP"],
+                "Downtime_min": [45.0],
+                "Speed_RPM": [0.0],
+                "Temperature_C": [55.0],
+                "Vibration_mm": [2.0],
+                "Power_Usage_pct": [10.0],
+            }
+        ),
+        "inventory": pd.DataFrame(
+            {
+                "Date": dates,
+                "Product": ["A"],
+                "Stock_Qty": [50],
+                "Reorder_Point": [100],
+                "Unit_Price": [10.0],
+            }
+        ),
     }
 
 

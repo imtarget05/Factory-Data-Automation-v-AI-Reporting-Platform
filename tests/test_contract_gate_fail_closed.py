@@ -40,6 +40,7 @@ validation (there is no contract to apply), and genuine per-row violations
 still quarantine rather than abort. Only the impossible-to-evaluate case
 changes, and it fails the job.
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -48,10 +49,18 @@ import app.data_contracts as dc
 from app.etl.pipeline import ContractGateUnavailable, apply_contract_gate
 
 GOOD_ROW = {
-    "Date": "2026-01-01", "Line": "L1", "Shift": "S1", "Product": "P",
-    "Machine_ID": "M1", "Worker_ID": "W1", "Target_Qty": 10,
-    "Actual_Qty": 10, "Good_Qty": 9, "Reject_Qty": 1,
-    "Cycle_Time_sec": 30.0, "Created_At": "2026-01-01 00:00:00",
+    "Date": "2026-01-01",
+    "Line": "L1",
+    "Shift": "S1",
+    "Product": "P",
+    "Machine_ID": "M1",
+    "Worker_ID": "W1",
+    "Target_Qty": 10,
+    "Actual_Qty": 10,
+    "Good_Qty": 9,
+    "Reject_Qty": 1,
+    "Cycle_Time_sec": 30.0,
+    "Created_At": "2026-01-01 00:00:00",
 }
 
 
@@ -64,18 +73,22 @@ def _frame(rows=None, **overrides):
 def _boom(exc):
     def _raise(*_a, **_k):
         raise exc
+
     return _raise
 
 
 # --- F6: the critical case. Validator implementation failure ---------------
 
 
-@pytest.mark.parametrize("exc", [
-    TypeError("simulated pydantic internal failure"),
-    AttributeError("model_validate removed in this version"),
-    ImportError("pydantic_core ABI mismatch"),
-    RuntimeError("contract bug"),
-])
+@pytest.mark.parametrize(
+    "exc",
+    [
+        TypeError("simulated pydantic internal failure"),
+        AttributeError("model_validate removed in this version"),
+        ImportError("pydantic_core ABI mismatch"),
+        RuntimeError("contract bug"),
+    ],
+)
 def test_f6_validator_internal_exception_fails_closed(monkeypatch, exc):
     """A validator that cannot run must NOT accept rows.
 
@@ -103,8 +116,6 @@ def test_f6_validator_internal_exception_fails_closed(monkeypatch, exc):
     )
 
 
-
-
 # --- F1-F4: coercion failures must be VIOLATIONS, not exceptions ------------
 #
 # These already pass today and are kept as regression guards. They are the
@@ -113,14 +124,17 @@ def test_f6_validator_internal_exception_fails_closed(monkeypatch, exc):
 # than to NaN handling.
 
 
-@pytest.mark.parametrize("bad,label", [
-    ("abc", "non-numeric string"),
-    (float("nan"), "NaN"),
-    (None, "None"),
-    ("", "empty string"),
-    (float("inf"), "+inf"),
-    (float("-inf"), "-inf"),
-])
+@pytest.mark.parametrize(
+    "bad,label",
+    [
+        ("abc", "non-numeric string"),
+        (float("nan"), "NaN"),
+        (None, "None"),
+        ("", "empty string"),
+        (float("inf"), "+inf"),
+        (float("-inf"), "-inf"),
+    ],
+)
 def test_f1_to_f4_bad_values_are_quarantined_not_accepted(bad, label):
     """Every unusable value is a violation -> quarantined, never accepted."""
     df = _frame(Reject_Qty=bad)
@@ -147,9 +161,7 @@ def test_f3_none_nan_empty_abc_are_not_silently_equivalent():
         out = apply_contract_gate(df, "production", "production.csv")
         seen[repr(bad)] = len(out)
 
-    assert set(seen.values()) == {0}, (
-        f"every unusable value must be rejected; got {seen}"
-    )
+    assert set(seen.values()) == {0}, f"every unusable value must be rejected; got {seen}"
 
 
 def test_f4_infinity_is_rejected_for_measure_fields():
@@ -172,7 +184,7 @@ def test_f5_mixed_batch_partitions_with_zero_silent_loss(tmp_path):
     for i in range(100):
         r = dict(GOOD_ROW)
         r["Worker_ID"] = f"W{i}"
-        r["Reject_Qty"] = i % 3          # 0..2, always <= Actual_Qty
+        r["Reject_Qty"] = i % 3  # 0..2, always <= Actual_Qty
         rows.append(r)
     for j, bad in enumerate(("abc", float("nan"), 999)):
         r = dict(GOOD_ROW)
@@ -184,8 +196,7 @@ def test_f5_mixed_batch_partitions_with_zero_silent_loss(tmp_path):
     assert len(df) == 103, "test setup: 103 input rows"
 
     qpath = tmp_path / "quarantine.csv"
-    out = apply_contract_gate(df, "production", "production.csv",
-                              quarantine_path=str(qpath))
+    out = apply_contract_gate(df, "production", "production.csv", quarantine_path=str(qpath))
 
     assert len(out) == 100, (
         f"expected 100 valid rows to survive, got {len(out)}. "
@@ -217,8 +228,7 @@ def test_invariant_validation_infra_failure_is_not_data_acceptance(monkeypatch):
 
 def test_nc_valid_rows_still_pass_the_gate():
     """The gate must not become fail-closed on everything."""
-    df = pd.DataFrame([dict(GOOD_ROW, Worker_ID=f"W{i}", Reject_Qty=i % 3)
-                       for i in range(20)])
+    df = pd.DataFrame([dict(GOOD_ROW, Worker_ID=f"W{i}", Reject_Qty=i % 3) for i in range(20)])
     out = apply_contract_gate(df, "production", "production.csv")
     assert len(out) == 20, "valid data is being rejected -- over-correction"
 
@@ -231,7 +241,7 @@ def test_nc_genuine_violation_still_quarantines_rather_than_aborting():
     original fail-open comment was actually worried about. That concern is
     valid and is preserved.
     """
-    df = _frame(Reject_Qty=999)   # Reject_Qty > Actual_Qty: a real violation
+    df = _frame(Reject_Qty=999)  # Reject_Qty > Actual_Qty: a real violation
     out = apply_contract_gate(df, "production", "production.csv")
     assert len(out) == 0, "a contract violation must be quarantined, not raised"
 
@@ -247,6 +257,7 @@ def test_nc_loader_failure_still_reports_rather_than_raising():
     """A missing raw file is a different failure from a broken contract."""
     with pytest.raises(ValueError):
         dc.validate_csv("/nonexistent/file.csv", "production")
+
 
 def test_f6b_infra_failure_does_not_return_rows(monkeypatch):
     """The frame must not come back at all -- returning it IS the defect."""

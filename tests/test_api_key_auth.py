@@ -71,8 +71,7 @@ def test_a3_correct_key_passes_auth_layer(client, enforced):
     assert r.status_code != 401
 
 
-@pytest.mark.parametrize("path", ["/", "/api/v1/health", "/metrics",
-                                  "/openapi.json", "/docs"])
+@pytest.mark.parametrize("path", ["/", "/api/v1/health", "/metrics", "/openapi.json", "/docs"])
 def test_safe_paths_open_without_key(client, enforced, path):
     r = client.get(path)
     assert r.status_code == 200, path

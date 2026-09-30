@@ -8,6 +8,7 @@ Invariants under test:
 - Provenance is deterministic set-membership against authorized evidence ids.
 - generation_mode honestly distinguishes REAL_MODEL / FALLBACK / NOT_RUN.
 """
+
 import sys
 from pathlib import Path
 
@@ -28,6 +29,7 @@ pd = pytest.importorskip("pandas")
 
 
 # ---------------------------------------------------------------- fixtures --
+
 
 class FakeLLM:
     """Deterministic test double. `calls` proves when the LLM was invoked."""
@@ -53,44 +55,90 @@ class FakeLLM:
 def make_datasets():
     dates = pd.to_datetime(["2026-09-28", "2026-09-29", "2026-09-30"])
     return {
-        "production": pd.DataFrame({
-            "Date": dates, "Line": ["L1"] * 3, "Target_Qty": [100] * 3,
-            "Actual_Qty": [95, 92, 90], "Good_Qty": [90, 88, 85],
-            "Reject_Qty": [5, 4, 5], "Cycle_Time_sec": [12.0] * 3}),
-        "quality": pd.DataFrame({
-            "Date": dates, "Defect_Count": [3, 4, 5], "Inspected_Qty": [100] * 3}),
-        "machine": pd.DataFrame({
-            "Date": dates, "Machine_ID": ["M-01"] * 3, "Status": ["RUN"] * 3,
-            "Downtime_min": [10.0, 5.0, 8.0], "Speed_RPM": [1000.0] * 3,
-            "Temperature_C": [60.0] * 3, "Vibration_mm": [1.0] * 3,
-            "Power_Usage_pct": [70.0] * 3}),
-        "inventory": pd.DataFrame({
-            "Date": dates, "Product": ["A"] * 3, "Stock_Qty": [500] * 3,
-            "Reorder_Point": [100] * 3, "Unit_Price": [10.0] * 3}),
+        "production": pd.DataFrame(
+            {
+                "Date": dates,
+                "Line": ["L1"] * 3,
+                "Target_Qty": [100] * 3,
+                "Actual_Qty": [95, 92, 90],
+                "Good_Qty": [90, 88, 85],
+                "Reject_Qty": [5, 4, 5],
+                "Cycle_Time_sec": [12.0] * 3,
+            }
+        ),
+        "quality": pd.DataFrame(
+            {"Date": dates, "Defect_Count": [3, 4, 5], "Inspected_Qty": [100] * 3}
+        ),
+        "machine": pd.DataFrame(
+            {
+                "Date": dates,
+                "Machine_ID": ["M-01"] * 3,
+                "Status": ["RUN"] * 3,
+                "Downtime_min": [10.0, 5.0, 8.0],
+                "Speed_RPM": [1000.0] * 3,
+                "Temperature_C": [60.0] * 3,
+                "Vibration_mm": [1.0] * 3,
+                "Power_Usage_pct": [70.0] * 3,
+            }
+        ),
+        "inventory": pd.DataFrame(
+            {
+                "Date": dates,
+                "Product": ["A"] * 3,
+                "Stock_Qty": [500] * 3,
+                "Reorder_Point": [100] * 3,
+                "Unit_Price": [10.0] * 3,
+            }
+        ),
     }
 
 
 def make_kpis():
-    daily = pd.DataFrame({
-        "Date": ["2026-09-30"], "Total_Target": [300], "Total_Actual": [277],
-        "Achievement_Rate_pct": [92.3], "Reject_Rate_pct": [4.5],
-        "Yield_pct": [95.5]})
+    daily = pd.DataFrame(
+        {
+            "Date": ["2026-09-30"],
+            "Total_Target": [300],
+            "Total_Actual": [277],
+            "Achievement_Rate_pct": [92.3],
+            "Reject_Rate_pct": [4.5],
+            "Yield_pct": [95.5],
+        }
+    )
     return {
         "daily_production": daily,
         "weekly_production": daily,
         "monthly_production": daily,
-        "oee": pd.DataFrame({"Date": ["2026-09-30"], "OEE_pct": [81.2],
-                             "Availability_pct": [90.0], "Performance_pct": [95.0],
-                             "Quality_pct": [95.5]}),
-        "machine_utilization": pd.DataFrame({
-            "Date": ["2026-09-30"], "Machine_ID": ["M-01"], "Failure_Count": [0],
-            "Total_Downtime": [8.0], "Utilization_pct": [88.0]}),
-        "inventory_kpi": pd.DataFrame({
-            "Total_Stock": [500], "Stock_Value": [5000.0],
-            "Products_Below_Reorder": [0]}),
-        "defect_analysis": {"by_type": pd.DataFrame({
-            "Defect_Type": ["scratch"], "Total_Defects": [12],
-            "Defect_Rate_pct": [1.5], "Total_Inspected": [800]})},
+        "oee": pd.DataFrame(
+            {
+                "Date": ["2026-09-30"],
+                "OEE_pct": [81.2],
+                "Availability_pct": [90.0],
+                "Performance_pct": [95.0],
+                "Quality_pct": [95.5],
+            }
+        ),
+        "machine_utilization": pd.DataFrame(
+            {
+                "Date": ["2026-09-30"],
+                "Machine_ID": ["M-01"],
+                "Failure_Count": [0],
+                "Total_Downtime": [8.0],
+                "Utilization_pct": [88.0],
+            }
+        ),
+        "inventory_kpi": pd.DataFrame(
+            {"Total_Stock": [500], "Stock_Value": [5000.0], "Products_Below_Reorder": [0]}
+        ),
+        "defect_analysis": {
+            "by_type": pd.DataFrame(
+                {
+                    "Defect_Type": ["scratch"],
+                    "Total_Defects": [12],
+                    "Defect_Rate_pct": [1.5],
+                    "Total_Inspected": [800],
+                }
+            )
+        },
     }
 
 
@@ -102,6 +150,7 @@ def make_generator(fake, monkeypatch):
 
 
 # ------------------------------------------------------------- gate unit ----
+
 
 def test_gate_good_snapshot():
     d = evaluate_quality(datasets=make_datasets(), kpis=make_kpis())
@@ -147,15 +196,17 @@ def test_gate_bad_missing_kpi_input():
 
 
 def test_gate_bad_quarantine_rate():
-    d = evaluate_quality(datasets=make_datasets(), kpis=make_kpis(),
-                         quarantine={"passed": 10, "rejected": 90})
+    d = evaluate_quality(
+        datasets=make_datasets(), kpis=make_kpis(), quarantine={"passed": 10, "rejected": 90}
+    )
     assert d.status == BAD
     assert any("quarantine rate" in f for f in d.failures)
 
 
 def test_gate_quarantine_normal_rate_is_good():
-    d = evaluate_quality(datasets=make_datasets(), kpis=make_kpis(),
-                         quarantine={"passed": 990, "rejected": 10})
+    d = evaluate_quality(
+        datasets=make_datasets(), kpis=make_kpis(), quarantine={"passed": 990, "rejected": 10}
+    )
     assert d.status == GOOD
 
 
@@ -167,6 +218,7 @@ def test_gate_unknown_on_evaluate_error_never_raises():
 
 
 # ---------------------------------------------------------- report paths ----
+
 
 def test_good_quality_llm_called_once_real_model(monkeypatch):
     fake = FakeLLM(payload={"title": "Daily report", "summary": "s"})
@@ -216,8 +268,9 @@ def test_bad_missing_dataset_blocks_llm(monkeypatch):
 def test_bad_quarantine_summary_blocks_llm(monkeypatch):
     fake = FakeLLM()
     gen = make_generator(fake, monkeypatch)
-    out = gen.generate_report(make_kpis(), [], make_datasets(),
-                              quarantine={"passed": 1, "rejected": 99})
+    out = gen.generate_report(
+        make_kpis(), [], make_datasets(), quarantine={"passed": 1, "rejected": 99}
+    )
     assert fake.calls == 0
     assert out["status"] == "BLOCKED"
     assert out["quality"]["status"] == BAD
@@ -233,11 +286,15 @@ def test_unknown_gate_error_blocks_llm(monkeypatch):
 
 
 def test_llm_cannot_override_quality_or_status(monkeypatch):
-    fake = FakeLLM(payload={
-        "title": "HACK", "quality": {"status": "GOOD"},
-        "status": "BLOCKED", "generation_mode": "REAL_MODEL",
-        "evidence": {"snapshot_id": "snap-forged"},
-    })
+    fake = FakeLLM(
+        payload={
+            "title": "HACK",
+            "quality": {"status": "GOOD"},
+            "status": "BLOCKED",
+            "generation_mode": "REAL_MODEL",
+            "evidence": {"snapshot_id": "snap-forged"},
+        }
+    )
     gen = make_generator(fake, monkeypatch)
     out = gen.generate_report(make_kpis(), [], make_datasets())
     assert out["quality"]["status"] == GOOD  # gate decision, not model's dict
@@ -247,8 +304,7 @@ def test_llm_cannot_override_quality_or_status(monkeypatch):
 
 
 def test_llm_fabricated_provenance_rejected(monkeypatch):
-    fake = FakeLLM(payload={"title": "T",
-                            "provenance": ["ghost:external-source"]})
+    fake = FakeLLM(payload={"title": "T", "provenance": ["ghost:external-source"]})
     gen = make_generator(fake, monkeypatch)
     out = gen.generate_report(make_kpis(), [], make_datasets())
     assert "ghost:external-source" not in out["provenance"]

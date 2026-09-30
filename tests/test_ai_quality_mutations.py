@@ -5,6 +5,7 @@ applies ONE temporary mutation (reverted automatically by monkeypatch),
 shows the mutation is visible, then records the expected test failure via
 pytest.xfail. No mutated code is ever committed.
 """
+
 import sys
 from pathlib import Path
 
@@ -37,7 +38,8 @@ def test_m1_bad_quality_classified_good_detected(monkeypatch):
     fake = FakeLLM()
     gen = make_generator(fake, monkeypatch)
     monkeypatch.setattr(
-        reporting, "evaluate_quality",
+        reporting,
+        "evaluate_quality",
         lambda **kw: QualityDecision(status=_GOOD, reason="mutated-always-good"),
     )
     ds = make_datasets()
@@ -82,8 +84,7 @@ def test_m3_nan_through_trusted_evidence_detected(monkeypatch):
     evidence = out["evidence"]
     assert evidence["kpis"]["daily_production"]["Achievement_Rate_pct"] is None
     assert fake.calls == 1
-    _xfail("M3 caught: NaN tolerated into trusted evidence as null "
-           "(quality/data test would FAIL)")
+    _xfail("M3 caught: NaN tolerated into trusted evidence as null (quality/data test would FAIL)")
 
 
 def test_m4_unauthorized_provenance_accepted_detected(monkeypatch):
