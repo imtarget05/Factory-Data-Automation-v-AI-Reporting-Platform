@@ -115,8 +115,25 @@ Hàm: `calculate_defect_analysis` (`app/etl/kpi_engine.py:268`).
 `by_type` sắp xếp giảm dần theo `Total_Defects` — dòng đầu là Pareto head
 (dùng cho câu "loại lỗi nào chiếm nhiều nhất?").
 
-## 8. Tổng số "84+ metric keys" đếm thế nào
+## 8. Tổng số metric column đếm thế nào
 
-10 + 9 + 9 + 7 + 12 + 10 + 8 + (5 + 3 + ~số cột daily) ≈ **80–90 cột KPI**
-tùy ngày có bao nhiêu `Defect_Type`/`Severity` distinct. Con số thay đổi theo
-dữ liệu — đó là lý do tài liệu gốc ghi "84+" mà không chốt số cố định.
+`calculate_all_kpis` trả về **8 nhóm KPI** (không phải 84 nhóm):
+
+| Nhóm | Số cột metric |
+|---|---|
+| `daily_production` | 10 |
+| `weekly_production` | 9 |
+| `monthly_production` | 9 |
+| `oee` | 7 |
+| `machine_utilization` | 12 |
+| `worker_productivity` | 10 |
+| `inventory_kpi` | 8 |
+| `defect_analysis` | 3 + các bảng con theo `Defect_Type`/`Severity` |
+
+Đo trên fixture chuẩn (seed 42, 90 ngày): **65–68 cột** tổng cộng. Con số
+thay đổi theo dữ liệu vì `defect_analysis` mở rộng theo số giá trị distinct
+của `Defect_Type`/`Severity`.
+
+Tài liệu trước đây ghi "84+" là một ước lượng không chốt được số cố định.
+Đã sửa thành số đo được. Xem `docs/RECRUITER-EVIDENCE.md` mục "Claims I could
+NOT verify" — con số 84+ nằm trong danh sách đó.

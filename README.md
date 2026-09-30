@@ -26,7 +26,7 @@ Hệ thống tự động hóa dữ liệu có hỗ trợ bởi AI và báo cáo
 |---|--------|-------------|-------|
 | 1 | **Data Import** | Auto-detect CSV/Excel files in `data/raw/` | Tự động phát hiện file CSV/Excel |
 | 2 | **Data Cleaning** | Remove duplicates, fill missing, validate, convert datetime | Xóa trùng, điền thiếu, kiểm tra lỗi |
-| 3 | **KPI Engine** | 84+ KPIs: OEE, Reject Rate, Yield, Machine Utilization, etc. | Tính 84+ chỉ số KPI sản xuất |
+| 3 | **KPI Engine** | 8 implemented KPI groups (≈65–68 metric columns depending on the data): OEE, Machine Utilization, Worker Productivity, Defect Analysis, Inventory, Daily/Weekly/Monthly Production | 8 nhóm KPI (~65–68 cột metric tùy dữ liệu) |
 | 4 | **Dashboard** | 9 Streamlit pages with Plotly interactive charts | 9 trang dashboard với biểu đồ tương tác |
 | 5 | **AI Reporting** | Local Qwen2.5 generates Summary, Problems, Recommendations, Risks | AI tạo báo cáo: Tóm tắt, Vấn đề, Đề xuất, Rủi ro |
 | 6 | **Export** | One-click Excel (multi-sheet) + PDF (professional report) | Xuất Excel nhiều sheet + PDF chuyên nghiệp |
