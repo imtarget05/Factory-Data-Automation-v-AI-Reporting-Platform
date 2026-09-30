@@ -29,7 +29,7 @@ COPY scripts/ ./scripts/
 # Faker is needed only by the generator (supplier names) and is therefore
 # installed and removed in the same layer — it never reaches the runtime
 # image, and requirements.api.txt stays minimal.
-RUN pip install --no-cache-dir faker \
+RUN pip install --no-cache-dir --retries 5 --timeout 60 faker \
     && python -m scripts.generate_sample_data \
     && test -n "$(ls -A data/raw/*.csv 2>/dev/null)" \
     && pip uninstall -y faker
