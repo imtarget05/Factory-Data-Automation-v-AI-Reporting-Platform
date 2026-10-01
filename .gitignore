@@ -48,3 +48,26 @@ Thumbs.db
 .venv-factory/
 .airflow/
 .airflow/logs/.venv-fixture/
+
+# ── Terraform ──────────────────────────────────────────────────────────────
+# State, plans and provider plugins are never committed. A committed state file
+# is a committed database dump, including every value Terraform saw — and the plan
+# JSON is a full description of every resource about to be created.
+.terraform/
+.terraform.tfstate.lock.info
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+crash.*.log
+# Local variable files may carry values that are not in the repo. The committed
+# *.tfvars files hold no secrets by construction; a `*.auto.tfvars` is by
+# definition local.
+*.auto.tfvars
+*.auto.tfvars.json
+# Override files are the classic way a secret enters a Terraform tree.
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

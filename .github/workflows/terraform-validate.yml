@@ -1,0 +1,194 @@
+name: Terraform Validate
+
+# The gate for infra/terraform/**. It runs the full chain offline: fmt, init,
+# validate, tflint, trivy config scan, and the plan-invariant checker's own
+# negative controls. A second, credentialed job runs a real `terraform plan`
+# against the transient validation environment.
+#
+# The Bicep validator (.github/workflows/iac-validate.yml) still runs, because
+# Bicep remains the migration reference until the Phase 1 parity matrix is
+# complete. Removing it before then would leave a window where neither IaC
+# language is checked.
+#
+# A green run means "the configuration is well-formed, the security rules bite,
+# and the plan is safe". It is NOT evidence that any Azure resource exists.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/terraform/**'
+      - '.github/workflows/terraform-validate.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/terraform/**'
+      - '.github/workflows/terraform-validate.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: terraform-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: fmt / init / validate / lint / scan / controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          # Pinned by the repo, not by the action default. This matches the
+          # constraint in versions.tf; if they drift, init fails loudly rather
+          # than silently resolving a different version.
+          terraform_version: '1.16.3'
+          terraform_wrapper: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: aquasecurity/setup-trivy@v0.2.3
+        with:
+          version: v0.74.0
+          cache: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform init
+        # -backend=false: this job must not create, migrate or lock a state
+        # backend. Remote state is Phase 2 and needs a repo-owned store; a
+        # validation job touching it is how a shared environment gets corrupted.
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: tflint
+        run: |
+          curl -sSf -o tflint.zip \
+            https://github.com/terraform-linters/tflint/releases/download/v0.59.1/tflint_linux_amd64.zip
+          unzip -q tflint.zip
+          sudo install -m 0755 tflint /usr/local/bin/tflint
+          tflint --init
+          tflint --recursive --format compact
+
+      - name: trivy config scan
+        # Scans the HCL itself: a hardcoded credential, an unpinned provider, a
+        # wildcard IAM role. This is a different surface from the application
+        # dependency scan in ci.yml and does not duplicate it.
+        #
+        # Suppressions live in .trivyignore in this directory, which trivy
+        # discovers automatically. The file is plain text, not YAML, because the
+        # YAML `checks:` form did not suppress anything on trivy 0.74.0 — see the
+        # comment at the top of that file. Every entry there carries a reason.
+        run: trivy config --severity HIGH,CRITICAL --exit-code 1 .
+
+      - name: plan-invariant checker negative controls
+        # Proves the gate bites. Without this step, a checker that silently
+        # stopped matching would let every later plan through, and CI would be
+        # green precisely when it matters least.
+        run: python3 tests/test_check_plan_invariants.py
+
+      - name: committed state / plan files must not exist
+        # Belt and braces. .gitignore already excludes them; this catches a
+        # `git add -f` or a file that arrived some other way.
+        run: |
+          if git ls-files --error-unmatch '*.tfstate' '*.tfplan' >/dev/null 2>&1; then
+            echo "FAIL: a state or plan file is committed"
+            git ls-files '*.tfstate' '*.tfplan'
+            exit 1
+          fi
+          echo "no committed state or plan files"
+
+  plan:
+    # The credentialed half. Only the validation environment, and plan only —
+    # never an apply, and never prod. The apply-to-prod path is a separate,
+    # manually approved workflow and belongs to Phase 2.
+    name: plan (validation, transient)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: static
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      id-token: write          # OIDC. NO AZURE_CLIENT_SECRET — see Phase 2.
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.16.3'
+          terraform_wrapper: false
+
+      - uses: azure/login@v2
+        with:
+          # OIDC only. A client secret would be a long-lived credential in the
+          # repository settings, which is exactly what Phase 2 removes.
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: configure provider
+        run: |
+          # Written at run time and never committed: it carries the subscription
+          # id from the environment, so committing it would be committing an
+          # environment binding.
+          cat > provider_override.tf <<'EOF'
+          provider "azurerm" {
+            features {}
+            subscription_id = "${ARM_SUBSCRIPTION_ID}"
+          }
+          EOF
+
+      - name: terraform plan (validation)
+        env:
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+          # The digest is the image built from this commit. Injecting it here is
+          # what ties the deployed revision to the source SHA, and it is also why
+          # the plan cannot pass with a mutable tag: the variable validation
+          # rejects one.
+          TF_VAR_container_image: ${{ vars.CONTAINER_IMAGE_DIGEST }}
+          TF_VAR_source_sha: ${{ github.sha }}
+        run: |
+          terraform init -input=false
+          terraform plan \
+            -input=false \
+            -out=tfplan \
+            -var-file=environments/validation/terraform.tfvars
+
+      - name: check plan invariants
+        run: |
+          terraform show -json tfplan > plan.json
+          python3 tests/check_plan_invariants.py plan.json --environment validation
+
+      - name: upload plan JSON as evidence
+        uses: actions/upload-artifact@v4
+        with:
+          # The plan JSON is an artefact, not a log line: it is the evidence that
+          # the security properties held at this SHA. Retention is short because
+          # a plan JSON describes every resource in detail.
+          name: terraform-plan-validation-${{ github.sha }}
+          path: infra/terraform/plan.json
+          retention-days: 14
+
+      - name: no orphans
+        # Nothing was applied, so nothing can be orphaned by this job. The step
+        # exists to make that explicit: if a future change adds an apply here,
+        # the reader of that diff should immediately see why cleanup became
+        # load-bearing.
+        # Quoted: an unquoted scalar containing ": " is a YAML mapping, not a
+        # string. Caught by the yaml parse check, not by a reader.
+        run: "echo 'plan-only job: no Azure resources were created'"

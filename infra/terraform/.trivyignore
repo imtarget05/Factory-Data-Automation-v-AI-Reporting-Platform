@@ -1,0 +1,30 @@
+# Trivy config-scan suppressions.
+#
+# FORMAT NOTE: this is the plain-text ignore format, not a YAML one. The YAML
+# `checks:` form was tried first and silently did NOT suppress anything on trivy
+# 0.74.0 — the scan still reported the finding with the file in place. A
+# suppression that does not suppress is worse than no suppression, because it
+# reads like a justification and behaves like nothing. Verified: with this file
+# present the misconfiguration count is 0.
+#
+# A suppression is a CLAIM that a scanner finding is wrong. Each entry says why.
+# An unexplained suppression is indistinguishable from ignoring the scanner.
+
+# AZU-0013 — "Key vault should have the network acl block specified".
+#
+# modules/keyvault/main.tf sets:
+#     default_action = var.public_network_access_enabled ? "Allow" : "Deny"
+# The scanner reads HCL, not the resolved value, so it sees a conditional and
+# reports the failure. In prod that expression evaluates to "Deny", and that is
+# not an assumption:
+#   * public_network_access_enabled is driven by the single root switch
+#     `private_endpoints_enabled`, which is forced true for prod
+#     (locals.private_endpoints_enabled = var.enable_private_endpoints || is_prod)
+#   * the prod.private rule in tests/check_plan_invariants.py independently
+#     asserts azurerm_key_vault.public_network_access_enabled == false in a prod
+#     plan, so a prod plan resolving this to "Allow" FAILS the gate.
+#
+# The finding is a true positive for dev and validation (where public access is
+# deliberate) and a false positive for prod (where it is closed and asserted).
+# The same suppression WITHOUT the plan assertion would be hiding a real hole.
+AZU-0013
