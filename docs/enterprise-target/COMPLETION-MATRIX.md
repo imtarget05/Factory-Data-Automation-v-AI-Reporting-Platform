@@ -30,17 +30,17 @@ No required row may be closed with `PARTIAL` / `PLANNED_ONLY` / `NOT_VERIFIED`.
 |---|---|---|---|---|
 | 1 | Terraform as canonical IaC | **NOT_STARTED** | 0 `*.tf` @ `a0cd889`; Bicep only (migration reference). Factory is 3rd in order (1 MAIA → 2 Helpdesk → 3 Factory) | Phase 1 |
 | 2 | Remote state + GitHub OIDC | **NOT_STARTED** | no secretless deploy path measured; no `*.tf`, no backend | Phase 2 |
-| 3 | Import existing Azure resources (no recreate) | **UNMEASURED** | live inventory not probed (no mutation attempted) | Phase 3 |
-| 4 | VNet + Private Endpoints + Private DNS | **UNMEASURED** | `infra/modules/network/vnet.bicep` (79 lines) + `infra/modules/storage/blob.bicep`; private-endpoint/DNS wiring not measured live | Phase 4 |
-| 5 | UAMI + Key Vault | **UNMEASURED** | `infra/modules/keyvault/main.bicep` (32 lines); **no `identity` module on `main`** (retired `03d1f20` identity/rbac is a Phase 4 future input, no in-app consumer yet) | Phase 4 |
-| 6 | Blob zones (raw / quarantine / silver / gold / reports) | **UNMEASURED** | `infra/modules/storage/blob.bicep` (84 lines, 4 containers); zone-count delta vs 5-zone enterprise shape is a Phase 1 design input | Phase 5 |
-| 7 | PostgreSQL run metadata + quarantine records | **IMPLEMENTED_TESTED** | `app/database/models.py` (`ETLRunManifest`, `QuarantineRecord`); `tests/test_servicebus_consumer.py`; green @ `a0cd889` (294 passed / 5 skipped / 4 xfailed) | Phase 5 |
-| 8 | Event Grid → Service Bus → ETL worker + DLQ | **IMPLEMENTED_TESTED** | `app/etl/servicebus_consumer.py` (dedup + DLQ) + `infra/modules/messaging/servicebus.bicep`; green @ `a0cd889` | Phase 5 |
+| 3 | Import existing Azure resources (no recreate) | **UNMEASURED** | inventory measured 2026-10-02: only `ca-factory-api` + shared `cae-portfolio` + shared LAW in `rg-portfolio-evidence`; no import executed | Phase 3 |
+| 4 | VNet + Private Endpoints + Private DNS | **NOT_STARTED** | `infra/modules/network/vnet.bicep` exists in Bicep only; **no VNet in the live subscription** | Phase 4 |
+| 5 | UAMI + Key Vault | **NOT_STARTED** | `infra/modules/keyvault/main.bicep` (Bicep only); live Container App `identity.type = None`; **no Key Vault in the live subscription** | Phase 4 |
+| 6 | Blob zones (raw / quarantine / silver / gold / reports) | **NOT_STARTED** | `infra/modules/storage/blob.bicep` defines 4 of 5 zones (no `reports`); **no storage account in the live subscription** | Phase 5 |
+| 7 | PostgreSQL run metadata + quarantine records | **IMPLEMENTED_TESTED** | `app/database/models.py` (`ETLRunManifest`, `QuarantineRecord`); `tests/test_servicebus_consumer.py`; green @ `be2fb04`. **Not deployed** — no Postgres in Azure | Phase 5 |
+| 8 | Event Grid → Service Bus → ETL worker + DLQ | **IMPLEMENTED_TESTED** | `app/etl/servicebus_consumer.py` (dedup + DLQ) + `infra/modules/messaging/servicebus.bicep`; green @ `be2fb04`. **Not deployed** — no Service Bus / Event Grid in Azure, and **no ETL worker container app exists** | Phase 5 |
 | 9 | Idempotency (duplicate Blob event / duplicate SB message) | **UNMEASURED** | consumer dedup covered by unit tests; duplicate-delivery negative control at runtime not measured | Phase 5 |
 | 10 | Deterministic quality gate (fail-closed) | **IMPLEMENTED_TESTED** | `tests/test_ai_quality_gate.py` + `tests/test_ai_quality_mutations.py` (incl. 4 xfailed mutation controls that must never pass); green @ `a0cd889` | Phase 6 |
 | 11 | AI report blocked when dataset is CRITICAL | **IMPLEMENTED_TESTED** | gate BAD/UNKNOWN branch covered at unit + HTTP level; **never triggered live in the cloud** (no bad data pushed to prod on purpose) | Phase 6 |
-| 12 | Worker restart safety | **UNMEASURED** | — | Phase 6 |
-| 13 | OTel + App Insights + Log Analytics + Grafana + SLO | **UNMEASURED** | `infra/modules/observability/main.bicep` (32 lines) + `observability/` (Prometheus 9104 / Grafana 3204); live wiring not measured | Phase 7 |
+| 12 | Worker restart safety | **NOT_STARTED** | no ETL worker process exists in source or runtime (consumer is a library seam only) | Phase 6 |
+| 13 | OTel + App Insights + Log Analytics + Grafana + SLO | **UNMEASURED** | `infra/modules/observability/main.bicep` + `observability/` (Prometheus 9104 / Grafana 3204) are local-only; live ACA has **no probes** and no verified App Insights wiring | Phase 7 |
 | 14 | Front Door + WAF + APIM (edge) | **NOT_STARTED** | no `edge`/`apim` module in Bicep; deliberate non-scope per enterprise baseline (API-key auth, Render edge) | Phase 8 |
 | 15 | OCI build + SBOM + digest-pinned rollout | **IMPLEMENTED_TESTED** | `build-container.yml` (GHCR push + digest log + SBOM via `anchore/sbom-action` + provenance attestation); **SUCCESS on `a0cd889`** (2026-10-01T17:14:21Z) | Phase 9 |
 

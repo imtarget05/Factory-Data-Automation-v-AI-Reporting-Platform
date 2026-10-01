@@ -59,9 +59,12 @@ pass (72 files).
 - **[factory-clean-clone]** — the canonical suite needs a **generated fixture**; a clean clone cannot reproduce it. `290 passed / 5 skipped / 4 xfailed` at deployed SHA `be4ace3`; the 4 xfailed are **mutation controls that must never pass**. *source: `docs/PORTFOLIO-FLAGSHIP-MATRIX.md`*
 - **[factory-ai-report-guard]** — the quality gate is live AND attested, but the **BAD/UNKNOWN branch was never triggered in the cloud**, and `REAL_MODEL` is unverified (no LLM reachable from the container). *source: same.*
 
-## 5. MEASURED 2026-10-02 @ `a0cd889` (fail-closed for the rest)
+## 5. RE-MEASURED 2026-10-02 @ `be2fb04` (canonical, WAVE 0 closed)
 
-- test suite: **303 collected → 294 passed / 5 skipped / 4 xfailed in 9.63 s**
+`origin/main` was fetched first; HEAD == origin/main == `be2fb04`, **0 ahead / 0 behind**,
+worktree CLEAN, no concurrent writer.
+
+- test suite: **303 collected → 294 passed / 5 skipped / 4 xfailed in 9.67 s**
   via `.venv` Python 3.12, `pytest tests/ -m "not live and not infra" --strict-markers`.
   System Python 3.14 is **NON-CANONICAL**: collection fails (4 errors,
   `ModuleNotFoundError: reportlab`) — missing declared environment
@@ -70,12 +73,43 @@ pass (72 files).
   `ruff format --check app/ tests/` → **71 files already formatted**.
 - fixture: `python -m scripts.verify_fixture --blessed docs/expected/factory-fixture.json`
   → **PASS (schema=factory-fixture-v1, seed=42, 26119 rows)**.
-- CI @ `origin/main`: **SUCCESS on `a0cd889`**
-  (`CI/CD Pipeline` + `Build and Publish API Image to GHCR`,
-  2026-10-01T17:14:21Z via `gh run list`). Previous `e78c6fa` CI run was **failure**.
-- Azure live revision / image digest .... **UNMEASURED** (not probed; no mutation attempted)
-- idempotency (duplicate Blob event / duplicate Service Bus message) .... **UNMEASURED**
-- cost exposure ......................... **UNMEASURED**
+- CI @ `be2fb04`: **SUCCESS** (`CI/CD Pipeline`, run `36911527549`).
+- Terraform: **NOT_STARTED** — **0 `*.tf`**. `terraform` 1.x and `trivy` are
+  installed locally; `tflint` is **NOT** installed.
+- Render: `render.yaml` still present (blueprint, free tier, frankfurt). Azure
+  Container Apps is the live path. Render active deploy state **NOT VERIFIED**
+  (no Render API credential available) — do not claim it is inactive.
+- Dead/duplicate deploy surface present and **not yet removed**:
+  `render.yaml`, `k8s/40-factory-api-real.yaml`, `k8s/factory-data-src/`,
+  `factory/Dockerfile*`, `docker/Dockerfile*` — cleanup is WAVE 0 follow-up.
+
+### 5b. Azure read-only inventory — MEASURED 2026-10-02 (no mutation)
+
+`az account show` succeeded, so this is **READ_ONLY_MEASURED**, not blocked.
+
+| Field | Measured value |
+|---|---|
+| subscription | `a3deec78-7edb-41cd-9e94-ec1d4d9379f5` ("Azure subscription 1") |
+| identity | `binhtan5734@gmail.com` (user / interactive) |
+| resource groups | `rg-portfolio-evidence` (eastasia), `NetworkWatcherRG` |
+| Factory resources in `rg-portfolio-evidence` | `ca-factory-api` (Container App), shared `cae-portfolio` (managed env), shared Log Analytics workspace |
+| **No** Factory-specific storage / postgres / service bus / key vault | **absent in this subscription** — the Bicep tree is NOT what is deployed |
+| live revision | `ca-factory-api--0000003` (Active, 1 replica, Healthy, Provisioned) |
+| image | `ghcr.io/…factory-data-automation-v-ai-reporting-platform-factory-api@sha256:7c3e81b7698b7625ef44d7f76ee594d1201acb8622a5497b15d1401e5ed853e2` |
+| identity type | `None` — **no managed identity configured** |
+| secrets | exactly one: `factory-api-key`, bound to env `FACTORY_API_KEY` |
+| ingress | external, targetPort 8000, `allowInsecure: false`, transport Auto |
+| scale | Consumption profile, min 1 / max 1 — **single replica, no worker app** |
+| probes | **none configured** (`probes: []`) |
+| live probe (unauthenticated) | `GET /api/v1/health` → **200** `{"status":"healthy","data_loaded":true}`; `GET /api/v1/kpis` → **401** `{"detail":"missing or invalid X-Factory-API-Key"}` |
+| authenticated success path | **NOT VERIFIED** — no credential used; must not be claimed |
+| `REAL_MODEL` | **NOT VERIFIED** — no LLM reachable from the container; live report is `FALLBACK` |
+
+**Consequence for the program:** the live platform is *one Container App and
+nothing else*. Bicep/Postgres/Blob/Service Bus exist only as source. Rows 3–9
+and 12–14 of the completion matrix stay `UNMEASURED`/`NOT_STARTED`; row 15 is
+`IMPLEMENTED_TESTED` (pipeline proven), runtime deployment of the full topology
+is not.
 
 CARRIED_FORWARD_NOT_REMEASURED (audit docs only — do NOT quote as verified): live revision `ca-factory-api--0000002` running `be4ace3` by digest `sha256:7c3e81b7…` with a SLSA attestation; cloud auth guard rejects unauthenticated requests (401) — **the authenticated success path is NOT VERIFIED** (the probe carried no credential).
 
