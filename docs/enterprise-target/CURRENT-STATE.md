@@ -17,13 +17,20 @@ rule        : no number appears below unless it was measured here, or is explici
 | Field | Value |
 |---|---|
 | remote | `https://github.com/imtarget05/Factory-Data-Automation-v-AI-Reporting-Platform.git` |
-| **canonical ref (`origin/main`)** | `a0cd8892cb6745751deb89ea8b72a4a5dffb98dd` |
-| local `HEAD` | `a0cd8892cb6745751deb89ea8b72a4a5dffb98dd` (branch `main`) |
-| drift vs origin | **0 ahead / 0 behind** — in sync |
+| **canonical ref (`origin/main`)** | `a56344c` (Render-cleanup merge, PR #1; supersedes `be2fb04` / `a0cd889`) |
+| local `HEAD` | not canonical — see drift row |
+| drift vs origin | `origin/main` is canonical |
 | worktree | **CLEAN** |
+| Render purge | **DONE** — root `render.yaml` + `.github/workflows/keepalive.yml` deleted in PR #1 (merge `a56344c`); anti-Render gate `tests/test_hygiene_no_render.py` (5 tests) merged; `origin/main` tree has **zero** `render.yaml`/`keepalive*` artifacts |
+| unpushed local commit | `8d1f6d4` on `factory/integration` (WAVE 0 baseline + ACT 4 Azure read-only inventory) is **still local only** — not on `origin/main`, not pushed |
 | stale writer retired | `ent/enterprise-target @ 03d1f20` retired 2026-10-02 after semantic supersession check (worktree removed, local branch deleted; no remote branch existed). See §7. |
 
-Canonical SHA is `a0cd889`; the 2026-10-01 ledger (`563a7d4` +3 docs drift) is superseded.
+Canonical SHA is `a56344c`; the 2026-10-01 ledger (`563a7d4` +3 docs drift) is superseded.
+
+**Post-cleanup measurement (CI run `36915938739`, all jobs green):** the suite
+measures **299 passed / 5 skipped / 4 xfailed** — the 294 baseline plus the 5
+anti-Render gate tests. `ruff check app/ tests/` and `ruff format --check` both
+pass (72 files).
 
 ## 2. Infrastructure as deployed today
 
@@ -35,7 +42,7 @@ Canonical SHA is `a0cd889`; the 2026-10-01 ledger (`563a7d4` +3 docs drift) is s
 | parameters | `infra/parameters/{dev,prod}.bicepparam` |
 | invariant checker | `infra/check_invariants.py` |
 | validation | `infra/validate.sh`, `infra/bicepconfig.json` |
-| CI | `.github/workflows/iac-validate.yml` *(also: `ci.yml`, `ci-live.yml`, `build-container.yml`, `keepalive.yml`, `llm-gateway.yml`)* |
+| CI | `.github/workflows/iac-validate.yml` *(also: `ci.yml`, `ci-live.yml`, `build-container.yml`, `llm-gateway.yml`; `keepalive.yml` removed in the Render cleanup)* |
 
 `storage` and `messaging` modules are present → Blob zone + Service Bus seams exist in Bicep.
 
