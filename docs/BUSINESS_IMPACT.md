@@ -1,8 +1,25 @@
 # 📊 Business Impact — AI-Powered Factory Data Automation
 
+> ## ⚠️ Status of the figures below: NOT MEASURED
+>
+> **Every percentage and hour figure in the two tables at the top of this file is
+> an UNMEASURED ESTIMATE — a planning assumption, not an observed result.**
+> There is no time-motion study, no production telemetry, and no before/after
+> measurement behind any of them. The only driver is
+> `scripts/measure_time_saved.py`, which **simulates** the comparison; the
+> simulation's own provenance is disowned in `docs/RECRUITER-EVIDENCE.md:308-311`.
+>
+> Treat these tables as *what the design targets*, and the lower
+> "Impact / How measured" table as the part with real provenance. A single figure
+> in this file is MEASURED: the ETL/KPI benchmark rows at the bottom, which name
+> their script, machine and date. Nothing here is a business result.
+
 ## Time & Cost Savings Analysis
 
-| Task | Manual (before) | AI-Powered (after) | Savings |
+> **Status: UNMEASURED ESTIMATE — not production time-motion, not observed.**
+> See the banner above.
+
+| Task | Manual (before) | AI-Powered (after) | Savings (estimated) |
 |------|----------------|-------------------|---------|
 | **Daily Production Report** | 2 hours | 5 minutes | **96%** |
 | **KPI Calculation (OEE, Yield, etc.)** | 30 minutes | 2 seconds | **99.9%** |
@@ -14,6 +31,8 @@
 | **Inventory Reorder Check** | 30 minutes | Automatic | **100%** |
 
 ## Total Daily Impact
+
+> **Status: UNMEASURED ESTIMATE — arithmetic on the table above, not observed.**
 
 | Metric | Value |
 |--------|-------|
@@ -37,14 +56,20 @@
 | Error cost (avg/month) | ~2,000,000 VND | ~100,000 VND |
 | **Total monthly** | **~8,000,000 VND** | **~200,000 VND** |
 
-> 💡 **Bottom line**: AI saves **~97.5%** of operational cost for factory data reporting.
+> **Status: UNMEASURED ESTIMATE — market rates applied to assumed hours, not a
+> measured spend.**
+
+> 💡 **Bottom line (UNMEASURED ESTIMATE, not a result)**: if the estimates above
+> hold, the design would cut factory data-reporting operational cost by roughly
+> 97.5%. No production spend was measured on either side, so this is a modelled
+> projection, not an observed saving.
 
 ---
 
 ## Extension (2026-09-27) — standard structure
 
-> Existing tables above are kept as-is. Honesty note: the time/cost figures
-> above are **ESTIMATES** (plan assumptions + `scripts/measure_time_saved.py`
+> Existing tables above are retained for transparency but are **UNMEASURED**: their
+> time/cost figures are **ESTIMATES** (plan assumptions + `scripts/measure_time_saved.py`
 > simulation: 750 s manual vs 12 s AI per report) — not production time-motion
 > measurements. Figures below distinguish MEASURED micro-bench from ESTIMATE.
 
@@ -58,9 +83,15 @@ into executive decisions; alerts depend on humans watching dashboards hourly.
 ### Solution (what the system does)
 
 Automated pipeline: file ingest (`data/raw/`) → cleaning/validation → KPI engine
-(84+ KPIs: OEE, reject, yield, utilization) → 9-page Streamlit dashboard + local
-Qwen2.5 executive reports + threshold alerts (reject>5%, inventory<200,
-downtime>30 min) → one-click Excel/PDF export.
+(84+ KPIs: OEE, reject, yield, utilization) → 9-page Streamlit dashboard + executive
+report narratives + threshold alerts (reject>5%, inventory<200, downtime>30 min) →
+one-click Excel/PDF export.
+
+On report narratives: local Qwen2.5 when it is reachable, otherwise deterministic
+fallback. **On the deployed Azure container the live endpoint returns `FALLBACK`**
+because no LLM endpoint is reachable from that container — `REAL_MODEL` mode is
+NOT VERIFIED on Azure (`README.md` Known gaps; `docs/RECRUITER-EVIDENCE.md:300-305`).
+What gates the live report is the deterministic authorization gate, not a model.
 
 ### Impact
 
