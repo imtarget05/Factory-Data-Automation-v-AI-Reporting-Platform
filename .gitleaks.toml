@@ -22,13 +22,21 @@ useDefault = true
 
 [[allowlists]]
 description = "OCI image references (ghcr.io factory-api tag/digest), not credentials"
+# AND, not the default OR: under OR a matching path skips the WHOLE FILE
+# before findings are evaluated (verified via --log-level=trace against the
+# gitleaks 8.28.0 source), which would blind these files to real credentials
+# added later. AND requires path AND regex to both match.
+condition = "AND"
 paths = [
   '''docs/evidence/images/''',
   '''docs/RECRUITER-EVIDENCE\.md''',
 ]
-# Narrow: a finding must match BOTH the path AND one of these regexes
-# (gitleaks ANDs criteria inside a single allowlist entry), so a real credential
-# added to these files still fails the scan.
+# regexTarget "line": the finding SECRET is only the entropy string and can
+# never carry the ghcr.io prefix, so matching the line is what makes the
+# path+regex pair a true intersection.
+regexTarget = "line"
+# Narrow: a finding must match BOTH the path AND one of these regexes,
+# so a real credential added to these files still fails the scan.
 #
 # Three shapes of the same fact appear in evidence:
 #   1. ghcr.io/.../factory-api:<tag>       image reference
