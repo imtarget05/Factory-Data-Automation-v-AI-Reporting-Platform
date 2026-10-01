@@ -1,8 +1,9 @@
 """Tests for Service Bus Telemetry Consumer."""
 
 import pytest
+
+from app.database.models import ETLRunManifest, SessionLocal, init_db
 from app.etl.servicebus_consumer import TelemetryConsumer
-from app.database.models import init_db, SessionLocal, ETLRunManifest, QuarantineRecord
 
 
 @pytest.fixture(autouse=True)

@@ -13,7 +13,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from app.database.models import ETLRunManifest, QuarantineRecord, SessionLocal
 
@@ -23,12 +23,16 @@ logger = logging.getLogger(__name__)
 class TelemetryConsumer:
     """Processes telemetry payloads from Azure Service Bus inbox."""
 
-    def __init__(self, connection_string: Optional[str] = None, queue_name: str = "factory-telemetry-inbox"):
+    def __init__(
+        self, connection_string: str | None = None, queue_name: str = "factory-telemetry-inbox"
+    ):
         self.connection_string = connection_string
         self.queue_name = queue_name
         self.processed_ids: set[str] = set()
 
-    def process_message(self, message: Dict[str, Any], message_id: Optional[str] = None) -> Dict[str, Any]:
+    def process_message(
+        self, message: dict[str, Any], message_id: str | None = None
+    ) -> dict[str, Any]:
         """Process a single telemetry message with deduplication and contract validation."""
         msg_id = message_id or message.get("id") or message.get("message_id")
         if not msg_id:
@@ -86,7 +90,9 @@ class TelemetryConsumer:
             "processed_at": datetime.utcnow().isoformat(),
         }
 
-    def process_batch(self, messages: List[Dict[str, Any]], run_id: Optional[str] = None) -> Dict[str, Any]:
+    def process_batch(
+        self, messages: list[dict[str, Any]], run_id: str | None = None
+    ) -> dict[str, Any]:
         """Process a batch of telemetry messages and log ETL run manifest."""
         run_key = run_id or f"run-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         started_at = datetime.utcnow()
@@ -104,7 +110,9 @@ class TelemetryConsumer:
                 duplicates += 1
 
         completed_at = datetime.utcnow()
-        checksum = hashlib.sha256(json.dumps(messages, default=str, sort_keys=True).encode("utf-8")).hexdigest()
+        checksum = hashlib.sha256(
+            json.dumps(messages, default=str, sort_keys=True).encode("utf-8")
+        ).hexdigest()
 
         # Record manifest
         self._record_manifest(
