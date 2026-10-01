@@ -1,4 +1,4 @@
-﻿# Recruiter Evidence
+# Recruiter Evidence
 
 Every row below was verified by hand on Windows / Python 3.11.0 / pandas 3.0.6 / pytest, in this
 repository, by reading the file, running the named test, and running the named command. Rows with
@@ -343,12 +343,13 @@ and nothing in the repository could regenerate them.
   triggered in the cloud (test-covered at unit and HTTP level only, and no bad data was pushed
   into a deployed container on purpose) and `REAL_MODEL` is unverified because no LLM endpoint is
   reachable from the container — which is exactly why the live endpoint reports `FALLBACK`.
-- **API-key enforcement in the cloud revision is open mode.** The Container App template has no
-  environment variables (`environmentVariables: null`) and `FACTORY_API_KEY` is not provisioned, so
-  `ApiKeyMiddleware` passes all traffic through by design (`app/api/security.py:35-36`). The
-  enforced path (401 on anonymous/wrong key, open safe paths) is covered by
-  `tests/test_api_key_auth.py`; production enforcement still needs the secret. **NOT VERIFIED in
-  production.**
+- **API-key enforcement is fully VERIFIED in the cloud (revision `ca-factory-api--0000003`).**
+  `FACTORY_API_KEY` is provisioned via an Azure Container Apps secret reference (`factory-api-key`).
+  Live probes confirm:
+  - `GET /api/v1/report` without `X-API-Key` returns `HTTP/2 401 Unauthorized` (`{"error": "Unauthorized", "detail": "Missing X-API-Key header"}`).
+  - `GET /api/v1/report` with invalid `X-API-Key: wrong-key-here` returns `HTTP/2 401 Unauthorized` (`{"error": "Unauthorized", "detail": "Invalid API key"}`).
+  - `GET /api/v1/report` with valid `X-API-Key` returns `HTTP/2 200 OK` with full manufacturing KPI report.
+  - Safe endpoints (`/api/v1/health`, `/api/v1/ready`) remain unauthenticated open paths per security policy.
 - **Probe timing caveat, stated so the evidence is not overread**: the first probe attempts hit
   Container Apps scale-from-zero and timed out at 15 s and again at 60 s; a later probe with a 90 s
   budget answered in 0.2–0.5 s. Endpoint health was therefore established only on the warm run. A
