@@ -121,6 +121,32 @@ class KPIHistory(Base):
     Created_At = Column(DateTime, default=datetime.utcnow)
 
 
+class ETLRunManifest(Base):
+    __tablename__ = "etl_run_manifests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(String, unique=True, index=True)
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    status = Column(String, default="RUNNING")  # RUNNING, SUCCESS, FAILED
+    rows_ingested = Column(Integer, default=0)
+    rows_quarantined = Column(Integer, default=0)
+    checksum_sha256 = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+
+class QuarantineRecord(Base):
+    __tablename__ = "quarantine_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(String, index=True, nullable=True)
+    source_file = Column(String, index=True)
+    row_index = Column(Integer, nullable=True)
+    rejection_reason = Column(String)
+    raw_payload = Column(Text)
+    quarantined_at = Column(DateTime, default=datetime.utcnow)
+
+
 # Create tables
 def init_db():
     Base.metadata.create_all(bind=engine)
