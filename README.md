@@ -3,18 +3,32 @@
 [![Python](https://img.shields.io/badge/Python-3.9+-blue)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.50+-red)](https://streamlit.io)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.128+-green)](https://fastapi.tiangolo.com)
-[![Ollama](https://img.shields.io/badge/LLM-Qwen2.5_3B-orange)](https://ollama.com)
+[![Ollama](https://img.shields.io/badge/LLM-local_only_optional_Qwen2.5_3B-orange)](https://ollama.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+
+> ### ⚠️ Live-deployment reality — read this before the feature list
+>
+> On the **deployed Azure container the report text is deterministic `FALLBACK`,
+> not model output**, because no LLM endpoint is reachable from that container.
+> `REAL_MODEL` mode is **NOT VERIFIED on Azure** — every observed run logged
+> `Cannot connect to Ollama` (`docs/RECRUITER-EVIDENCE.md:300-305`), which is
+> exactly why the live endpoint correctly reports `FALLBACK`.
+>
+> The Qwen2.5 path is real, working code that produces output **locally** when
+> Ollama is up; it is not what produced any live/deployed output. Do not read
+> the "AI-Powered" in the title or the LLM badge as "a model wrote the live
+> report". What *is* verified live is the deterministic authorization gate
+> (§ Known gaps) and the API-key guard — see `docs/RECRUITER-EVIDENCE.md`.
 
 ---
 
 ## 📋 Project Overview | Tổng Quan Dự Án
 
 **English:**  
-An AI-powered data automation and intelligent reporting system for manufacturing operations. This project simulates a shoe factory and automates the entire data pipeline — from raw Excel/CSV files to interactive dashboards, AI-generated executive reports, and automated alerts — replacing manual copy-paste, filtering, merging, pivot tables, charting, and report writing.
+An AI-powered data automation and intelligent reporting system for manufacturing operations. This project simulates a shoe factory and automates the entire data pipeline — from raw Excel/CSV files to interactive dashboards, executive report narratives, and automated alerts — replacing manual copy-paste, filtering, merging, pivot tables, charting, and report writing. "AI-powered" is qualified by the live-deployment note above: the model path runs locally, the deployed container returns deterministic fallback.
 
 **Tiếng Việt:**  
-Hệ thống tự động hóa dữ liệu có hỗ trợ bởi AI và báo cáo thông minh cho hoạt động sản xuất. Dự án mô phỏng một nhà máy sản xuất giày và tự động hóa toàn bộ quy trình xử lý dữ liệu — từ file Excel/CSV thô đến bảng điều khiển tương tác, báo cáo điều hành do AI tạo ra, và cảnh báo tự động — thay thế hoàn toàn việc copy-paste, lọc, merge, pivot, vẽ biểu đồ và viết báo cáo thủ công.
+Hệ thống tự động hóa dữ liệu có hỗ trợ bỗ trợ AI và báo cáo thông minh cho hoạt động sản xuất. Dự án mô phỏng một nhà máy sản xuất giày và tự động hóa toàn bộ quy trình xử lý dữ liệu — từ file Excel/CSV thô đến bảng điều khiển tương tác, phần văn bản báo cáo điều hành, và cảnh báo tự động — thay thế hoàn toàn việc copy-paste, lọc, merge, pivot, vẽ biểu đồ và viết báo cáo thủ công. Phần "AI" được giới hạn đúng như ghi chú ở trên: chạy model được ở local, còn bản deploy Azure trả về fallback tất định.
 
 ---
 
@@ -28,7 +42,7 @@ Hệ thống tự động hóa dữ liệu có hỗ trợ bởi AI và báo cáo
 | 2 | **Data Cleaning** | Remove duplicates, fill missing, validate, convert datetime | Xóa trùng, điền thiếu, kiểm tra lỗi |
 | 3 | **KPI Engine** | 8 implemented KPI groups (≈65–68 metric columns depending on the data): OEE, Machine Utilization, Worker Productivity, Defect Analysis, Inventory, Daily/Weekly/Monthly Production | 8 nhóm KPI (~65–68 cột metric tùy dữ liệu) |
 | 4 | **Dashboard** | 9 Streamlit pages with Plotly interactive charts | 9 trang dashboard với biểu đồ tương tác |
-| 5 | **AI Reporting** | Local Qwen2.5 generates Summary, Problems, Recommendations, Risks | AI tạo báo cáo: Tóm tắt, Vấn đề, Đề xuất, Rủi ro |
+| 5 | **AI Reporting** | Report narrative — Summary, Problems, Recommendations, Risks. Local Qwen2.5 when it is reachable; otherwise deterministic fallback. **The deployed Azure container returns `FALLBACK`** (no model reachable), so live report text is not model-written | AI tạo phần văn bản báo cáo: Tóm tắt, Vấn đề, Đề xuất, Rủi ro — có Qwen2.5 local khi chạy được, không thì dùng fallback tất định. **Bản deploy Azure trả về `FALLBACK`**, nên văn bản báo cáo live không do model viết |
 | 6 | **Export** | One-click Excel (multi-sheet) + PDF (professional report) | Xuất Excel nhiều sheet + PDF chuyên nghiệp |
 | 7 | **Alert System** | Reject>5%→Warning, Inventory<200→Alert, Downtime>30min→Alert | Cảnh báo tự động theo ngưỡng |
 | 8 | **AI Chat** | Ask questions: "Which machine has highest downtime?" | Hỏi đáp với dữ liệu nhà máy |
@@ -479,7 +493,9 @@ Workflow: `.github/workflows/ci.yml`
 
 ### AI Report Metrics
 Every AI report generation is logged with:
-- LLM model used (qwen2.5)
+- LLM model actually used, when one was reachable (`qwen2.5` locally). If none was
+  reachable — which is the case on the deployed Azure container — the log records
+  `generation_mode: FALLBACK` and names the connection failure instead of a model.
 - Inference duration (ms)
 - Fallback vs AI-generated status
 - Alert count and severity breakdown
@@ -533,12 +549,12 @@ def create_oee_trend_chart(df):
     return fig
 ```
 
-> 💡 **Takeaway**: AI tools reduced development time by ~60%. Copilot handled boilerplate code, ChatGPT generated complex algorithms, and Claude reviewed architecture decisions.
+> 💡 **Takeaway**: AI coding assistants were used throughout this build (boilerplate, algorithm drafts, architecture review). **I have not measured a development-time reduction, so I publish no number for one** — the only time figures in this repo are labelled MEASURED or ESTIMATE in `docs/BUSINESS_IMPACT.md`, and the ESTIMATE ones come from a simulation (`scripts/measure_time_saved.py`), not from a production time-motion study.
 
 ## 📬 Contact | Liên Hệ
 
-**English:** This project was developed as an internship portfolio project for AI & Data Automation.  
-**Tiếng Việt:** Dự án này được phát triển như một sản phẩm portfolio thực tập về AI và Tự động hóa dữ liệu.
+**English:** Built as a portfolio project for AI Application Engineering — production-oriented practice (auth guard, deterministic gate, container deploy, attested image, test suite), built by a career-changer with no commercial AI engineering experience.  
+**Tiếng Việt:** Đây là dự án portfolio hướng ứng tuyển **AI Application Engineer** — thực hành theo hướng production (auth guard, deterministic gate, deploy container, image có attestation, test suite), do một người chuyển ngành và chưa có kinh nghiệm AI engineering thương mại.
 
 ---
 
