@@ -2,7 +2,7 @@
 
 ```text
 derived_from : docs/enterprise-target/CURRENT-STATE.md
-measured_at  : 2026-10-02 @ a0cd8892cb6745751deb89ea8b72a4a5dffb98dd
+measured_at  : 2026-10-02 @ 4ac699f (canonical) + factory/integration (WAVE 0/1)
 ```
 
 ## Status vocabulary
@@ -16,6 +16,8 @@ NOT_STARTED         required; no source exists yet (0 files / absent seam)
 
 INTERIM (must be resolved before Phase 12 freeze — never a terminal state):
 
+SOURCE_PARITY_VERIFIED  Terraform source exists, validates, and its security gate
+                        bites — but it is NOT canonical and nothing is deployed
 IMPLEMENTED_UNVERIFIED  source + tests exist; suite NOT re-run this pass; runtime not verified
 UNMEASURED              required; not yet measured in this program
 NOT_PASSING             a measured control currently fails
@@ -28,21 +30,21 @@ No required row may be closed with `PARTIAL` / `PLANNED_ONLY` / `NOT_VERIFIED`.
 
 | # | Required component | Status (now) | Evidence measured | Close in |
 |---|---|---|---|---|
-| 1 | Terraform as canonical IaC | **NOT_STARTED** | 0 `*.tf` @ `a0cd889`; Bicep only (migration reference). Factory is 3rd in order (1 MAIA → 2 Helpdesk → 3 Factory) | Phase 1 |
-| 2 | Remote state + GitHub OIDC | **NOT_STARTED** | no secretless deploy path measured; no `*.tf`, no backend | Phase 2 |
+| 1 | Terraform as canonical IaC | **SOURCE_PARITY_VERIFIED** (not canonical) | 37 `*.tf` under `infra/terraform/` on `factory/integration`; `terraform validate` Success; `fmt -check` OK; 26/26 plan-gate negative controls PASS; trivy 0 HIGH/CRITICAL. **`origin/main` still has 0 `*.tf`** and nothing is applied. Factory is 3rd in order (1 MAIA → 2 Helpdesk → 3 Factory). Parity: `TERRAFORM-PARITY-MATRIX.md` | Phase 1→3 |
+| 2 | Remote state + GitHub OIDC | **NOT_STARTED** | `backend.tf` is deliberately EMPTY (a placeholder would let a local tfstate be mistaken for durable state). CI plan job uses `azure/login` OIDC with **no `AZURE_CLIENT_SECRET`**, but it is unproven against a real plan | Phase 2 |
 | 3 | Import existing Azure resources (no recreate) | **UNMEASURED** | inventory measured 2026-10-02: only `ca-factory-api` + shared `cae-portfolio` + shared LAW in `rg-portfolio-evidence`; no import executed | Phase 3 |
-| 4 | VNet + Private Endpoints + Private DNS | **NOT_STARTED** | `infra/modules/network/vnet.bicep` exists in Bicep only; **no VNet in the live subscription** | Phase 4 |
-| 5 | UAMI + Key Vault | **NOT_STARTED** | `infra/modules/keyvault/main.bicep` (Bicep only); live Container App `identity.type = None`; **no Key Vault in the live subscription** | Phase 4 |
-| 6 | Blob zones (raw / quarantine / silver / gold / reports) | **NOT_STARTED** | `infra/modules/storage/blob.bicep` defines 4 of 5 zones (no `reports`); **no storage account in the live subscription** | Phase 5 |
-| 7 | PostgreSQL run metadata + quarantine records | **IMPLEMENTED_TESTED** | `app/database/models.py` (`ETLRunManifest`, `QuarantineRecord`); `tests/test_servicebus_consumer.py`; green @ `be2fb04`. **Not deployed** — no Postgres in Azure | Phase 5 |
-| 8 | Event Grid → Service Bus → ETL worker + DLQ | **IMPLEMENTED_TESTED** | `app/etl/servicebus_consumer.py` (dedup + DLQ) + `infra/modules/messaging/servicebus.bicep`; green @ `be2fb04`. **Not deployed** — no Service Bus / Event Grid in Azure, and **no ETL worker container app exists** | Phase 5 |
+| 4 | VNet + Private Endpoints + Private DNS | **SOURCE_PARITY_VERIFIED** (not deployed) | Bicep `infra/modules/network/vnet.bicep`; Terraform `modules/network` (VNet, ACA subnet, PE subnet, PG subnet, 5 private DNS zones) + per-resource private endpoints. **No VNet in the live subscription** | Phase 4 |
+| 5 | UAMI + Key Vault | **SOURCE_PARITY_VERIFIED** (not deployed) | Terraform `modules/identity` (api read-only + worker UAMI) and `modules/keyvault` (RBAC, purge protection, 90-day soft delete). **Role assignments are DEFERRED** — the identities exist and are inert. Live ACA `identity.type = None`; no Key Vault in Azure | Phase 4 |
+| 6 | Blob zones (raw / quarantine / silver / gold / reports) | **SOURCE_PARITY_VERIFIED** (not deployed) | Bicep defines 4 zones (no `reports`); Terraform defines the full **5** (raw-landing, quarantine-corrupt, silver-clean, gold-marts, reports) + versioning + blob/container soft delete. **No storage account in Azure** | Phase 5 |
+| 7 | PostgreSQL run metadata + quarantine records | **IMPLEMENTED_TESTED** | `app/database/models.py` (`ETLRunManifest`, `QuarantineRecord`); `tests/test_servicebus_consumer.py`; green @ `4ac699f` (299 passed / 5 skipped / 4 xfailed). **Not deployed** — no Postgres in Azure | Phase 5 |
+| 8 | Event Grid → Service Bus → ETL worker + DLQ | **IMPLEMENTED_TESTED** (app) + **SOURCE_PARITY_VERIFIED** (IaC) | app: `app/etl/servicebus_consumer.py` (dedup + DLQ), green @ `4ac699f`-era. IaC: Terraform `modules/servicebus` (explicit DLQ, dedup PT10M) + `modules/eventgrid` (BlobCreated → queue, UAMI-authenticated) — **ahead of Bicep, which had no Event Grid**. **Not deployed**: no Service Bus / Event Grid in Azure, and **no ETL worker container app exists** (deferred: no worker entry point in `app/`) | Phase 5 |
 | 9 | Idempotency (duplicate Blob event / duplicate SB message) | **UNMEASURED** | consumer dedup covered by unit tests; duplicate-delivery negative control at runtime not measured | Phase 5 |
-| 10 | Deterministic quality gate (fail-closed) | **IMPLEMENTED_TESTED** | `tests/test_ai_quality_gate.py` + `tests/test_ai_quality_mutations.py` (incl. 4 xfailed mutation controls that must never pass); green @ `a0cd889` | Phase 6 |
+| 10 | Deterministic quality gate (fail-closed) | **IMPLEMENTED_TESTED** | `tests/test_ai_quality_gate.py` + `tests/test_ai_quality_mutations.py` (incl. 4 xfailed mutation controls that must never pass); green @ `4ac699f` (299 passed / 5 skipped / 4 xfailed) | Phase 6 |
 | 11 | AI report blocked when dataset is CRITICAL | **IMPLEMENTED_TESTED** | gate BAD/UNKNOWN branch covered at unit + HTTP level; **never triggered live in the cloud** (no bad data pushed to prod on purpose) | Phase 6 |
 | 12 | Worker restart safety | **NOT_STARTED** | no ETL worker process exists in source or runtime (consumer is a library seam only) | Phase 6 |
-| 13 | OTel + App Insights + Log Analytics + Grafana + SLO | **UNMEASURED** | `infra/modules/observability/main.bicep` + `observability/` (Prometheus 9104 / Grafana 3204) are local-only; live ACA has **no probes** and no verified App Insights wiring | Phase 7 |
-| 14 | Front Door + WAF + APIM (edge) | **NOT_STARTED** | no `edge`/`apim` module in Bicep; deliberate non-scope per enterprise baseline (API-key auth, Render edge) | Phase 8 |
-| 15 | OCI build + SBOM + digest-pinned rollout | **IMPLEMENTED_TESTED** | `build-container.yml` (GHCR push + digest log + SBOM via `anchore/sbom-action` + provenance attestation); **SUCCESS on `a0cd889`** (2026-10-01T17:14:21Z) | Phase 9 |
+| 13 | OTel + App Insights + Log Analytics + Grafana + SLO | **UNMEASURED** | Terraform `modules/observability` (workspace, App Insights workspace-based, action group, 4 alert rules each naming a runbook) + local `observability/` (Prometheus 9104 / Grafana 3204). Live ACA has **no probes** and no verified App Insights wiring | Phase 7 |
+| 14 | Front Door + WAF + APIM (edge) | **SOURCE_PARITY_VERIFIED** (not deployed, not enabled) | Terraform `modules/edge` (Front Door Premium, WAF `Prevention`, APIM Consumption + API-level rate-limit policy) — **absent in Bicep entirely**. `enable_edge = false` ⇒ `count = 0` ⇒ the plan contains **zero** edge resources. Not applied | Phase 8 |
+| 15 | OCI build + SBOM + digest-pinned rollout | **IMPLEMENTED_TESTED** | `build-container.yml` (GHCR push + digest log + SBOM via `anchore/sbom-action` + provenance attestation); **SUCCESS on `a0cd889`** (run `36897901007`). Terraform independently enforces digest-pinning: `container_image` is validated to match `@sha256:<64 hex>`, so a mutable tag cannot reach a plan | Phase 9 |
 
 > Carried live claims (rev `ca-factory-api--0000002` @ `be4ace3` by digest `sha256:7c3e81b7…` with SLSA attestation; 401 guard; quality gate live) are **CARRIED_FORWARD_NOT_REMEASURED**. The BAD/UNKNOWN branch was never triggered in the cloud, and `REAL_MODEL` is unverified.
 
@@ -53,8 +55,8 @@ No required row may be closed with `PARTIAL` / `PLANNED_ONLY` / `NOT_VERIFIED`.
 | # | Required component | Status (now) | Evidence measured | Close in |
 |---|---|---|---|---|
 | 16 | 6A.1 Provider timeout / retry / fallback / circuit breaker | **UNMEASURED** | `llm-gateway` exists (CB/retry/PII per its README) — no LLM reachable from container | 6A |
-| 16b | 6A — Data-quality gate precedes AI report | **IMPLEMENTED_TESTED** | gate suite green @ `a0cd889` (see row 10) | 6A |
-| 17 | 6A.3 Structured AI report validation (schema + business) before persist | **IMPLEMENTED_TESTED** | report endpoint returns `generation_mode`/`quality`/`evidence`/`provenance`; green @ `a0cd889` | 6A |
+| 16b | 6A — Data-quality gate precedes AI report | **IMPLEMENTED_TESTED** | gate suite green @ `4ac699f` (299 passed / 5 skipped / 4 xfailed) (see row 10) | 6A |
+| 17 | 6A.3 Structured AI report validation (schema + business) before persist | **IMPLEMENTED_TESTED** | report endpoint returns `generation_mode`/`quality`/`evidence`/`provenance`; green @ `4ac699f` (299 passed / 5 skipped / 4 xfailed) | 6A |
 | 18 | 6A.6 No secrets in prompt / log / metric / trace | **UNMEASURED** | — | 6A |
 | 19 | 6B Multi-agent safety | **N/A_WITH_EVIDENCE** *(conditional)* | applies only if genuine agent orchestration exists | 6B |
 | 20 | 6C.1 Bounded concurrency | **UNMEASURED** | — | 6C |
