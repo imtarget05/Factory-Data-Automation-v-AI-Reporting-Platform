@@ -1,0 +1,16 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Azure/bicep/main/schema/bicepconfig.json",
+  "experimentalFeaturesEnabled": {
+    "extensibility": true
+  },
+  "analyzers": {
+    "core": {
+      "enabled": true,
+      "rules": {
+        "use-recent-api-versions": {
+          "level": "off"
+        }
+      }
+    }
+  }
+}

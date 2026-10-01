@@ -1,7 +1,7 @@
 # ADR-0001: SQLite-Default Ephemeral Store vs Managed Postgres on Free Tier
 
-- **Status:** Accepted
-- **Date:** 2026-09-27
+- **Status:** Superseded by [ADR-0002](0002-migrate-to-postgresql-blob-storage.md)
+- **Date:** 2026-09-27 (Superseded 2026-10-01)
 
 ## Context
 
