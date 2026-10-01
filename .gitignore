@@ -17,6 +17,7 @@ data/raw/*
 data/processed/*
 data/exports/*
 data/quarantine/*
+*.db
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/exports/.gitkeep
