@@ -226,10 +226,16 @@ was not actually neutralized.
   pushed into a deployed container.
 - `REAL_MODEL` mode is unverified on Azure: no LLM endpoint is reachable from the
   container, which is exactly why the live endpoint correctly reports `FALLBACK`.
-- `FACTORY_API_KEY` is not set in the deployed container, so the API-key
-  middleware is in documented open mode there. The middleware's enforced path is
-  covered by `tests/test_api_key_auth.py`, but production enforcement requires the
-  secret to be provisioned.
+- The API-key guard **is enforcing on the live deployment**, so the secret is
+  provisioned. Re-probed 2026-10-01: `GET /api/v1/kpis` → `401`
+  (`{"detail": "missing or invalid X-Factory-API-Key"}`), and
+  `GET /api/v1/metrics-evil` → `401` rather than `404` — which is only possible
+  when a key is configured, because `app/api/security.py:35-36` passes the request
+  through when none is. `GET /api/v1/health` stays open as a safe/exempt path.
+  **NOT VERIFIED:** the authenticated success path against the live secret. The
+  probe deliberately sent no credential; that path is covered by
+  `tests/test_api_key_auth.py` only. Do not describe the live API as protected
+  end-to-end.
 - No cold-start SLA is claimed: probes timed out at 15 s and 60 s on
   scale-from-zero before a 90 s budget answered in 0.2 s, and the revision
   template configures no probes.
@@ -313,11 +319,26 @@ API docs at **http://localhost:8000/docs**
 python -m pytest tests/ -q
 ```
 
-**Verified: 290 passed, 5 skipped, 4 xfailed** at commit `be4ace3` (gate
-implementation in `2477cf8`). The 4 `xfailed` are the mutation-detection
+**Canonical suite figure: 290 passed, 5 skipped, 4 xfailed** at the deployed
+source SHA `be4ace3` (gate implementation in `2477cf8`). Two SHAs, deliberately
+not merged:
+
+| Identity | SHA | Suite |
+|---|---|---|
+| **Deployed source** (per the identities table above) | `be4ace3` | **290 passed, 5 skipped, 4 xfailed** |
+| **Verified test SHA** (CI GREEN run `36741560374`) | `70509fc` | 288 passed, 5 skipped, 4 xfailed |
+
+The two differ by exactly the two regression tests `be4ace3` added to
+`tests/test_reporting_boundary.py` for the cumulative-DLQ quarantine-rate defect.
+`be4ace3` is the descendant of `70509fc`, so 290 supersedes 288; 288 is history,
+not a competing claim. Publish the figure with its SHA attached, never bare.
+That reconciliation is from the committed trees, not a re-run: if HEAD moves
+past `be4ace3`, re-measure the suite instead of inheriting this number.
+
+The 4 `xfailed` are the mutation-detection
 controls `M1`–`M4` in `tests/test_ai_quality_mutations.py` — they are *supposed*
 to fail, and passing-by-failure is how they prove the gate tests detect a
-neutralized check. If `288 passed, 5 skipped, 4 xfailed` (commit `9192da1`) or
+neutralized check. If `288 passed, 5 skipped, 4 xfailed` or
 `258 passed, 5 skipped` (commit `4e4e8b58`) is what you see, you are on an
 earlier tree.
 If `data/raw/` is empty, run `python -m scripts.generate_sample_data` first —

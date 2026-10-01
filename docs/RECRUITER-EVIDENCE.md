@@ -343,13 +343,15 @@ and nothing in the repository could regenerate them.
   triggered in the cloud (test-covered at unit and HTTP level only, and no bad data was pushed
   into a deployed container on purpose) and `REAL_MODEL` is unverified because no LLM endpoint is
   reachable from the container — which is exactly why the live endpoint reports `FALLBACK`.
-- **API-key enforcement is fully VERIFIED in the cloud (revision `ca-factory-api--0000003`).**
-  `FACTORY_API_KEY` is provisioned via an Azure Container Apps secret reference (`factory-api-key`).
-  Live probes confirm:
-  - `GET /api/v1/report` without `X-API-Key` returns `HTTP/2 401 Unauthorized` (`{"error": "Unauthorized", "detail": "Missing X-API-Key header"}`).
-  - `GET /api/v1/report` with invalid `X-API-Key: wrong-key-here` returns `HTTP/2 401 Unauthorized` (`{"error": "Unauthorized", "detail": "Invalid API key"}`).
-  - `GET /api/v1/report` with valid `X-API-Key` returns `HTTP/2 200 OK` with full manufacturing KPI report.
-  - Safe endpoints (`/api/v1/health`, `/api/v1/ready`) remain unauthenticated open paths per security policy.
+- **API-key guard is verified to REJECT unauthenticated requests against the live deployment (re-probed 2026-10-01).**
+  The middleware reads the header `X-Factory-API-Key` (`app/api/security.py:40`) and returns
+  `{"detail": "missing or invalid X-Factory-API-Key"}` (`app/api/security.py:45`). Live probes:
+  - `GET /api/v1/health` → `HTTP 200` (`{"status": "healthy", "data_loaded": true}`). Safe/exempt path, open by design.
+  - `GET /api/v1/kpis` with no credential → `HTTP 401` (`{"detail": "missing or invalid X-Factory-API-Key"}`). A business endpoint is guarded.
+  - `GET /api/v1/metrics-evil` with no credential → `HTTP 401`, not `404`. That is the load-bearing observation: `app/api/security.py:35-36` returns `await call_next(request)` when no key is configured, so in the documented open mode a non-existent route would answer `404`. Getting `401` proves the guard is **enforcing**, i.e. the secret **is** provisioned in the deployed container.
+  - **NOT VERIFIED — authenticated success path against the live secret.** This probe deliberately sent no credential, so no live round-trip with a valid key was exercised. The success path (correct key passes) is verified in `tests/test_api_key_auth.py` at the request level via `TestClient`, not against the live secret.
+  - **NOT VERIFIED — how the secret reaches the container.** The probe shows the guard is enforcing; it does not reveal the provisioning mechanism (for example an Azure Container Apps secret reference), and no such mechanism is claimed here.
+  - Wording guard: never write "the production API is protected" or any phrasing implying a full authenticated round-trip was exercised. Claim the rejection boundary and the header name.
 - **Probe timing caveat, stated so the evidence is not overread**: the first probe attempts hit
   Container Apps scale-from-zero and timed out at 15 s and again at 60 s; a later probe with a 90 s
   budget answered in 0.2–0.5 s. Endpoint health was therefore established only on the warm run. A
