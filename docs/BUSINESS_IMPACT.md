@@ -100,7 +100,7 @@ What gates the live report is the deterministic authorization gate, not a model.
 | OEE reconciliation labor | 120 h/month | automated | ESTIMATE — plan assumption; pending time-motion study. Not measured here. |
 | Daily reporting labor | ~8.5 h/day | minutes | ESTIMATE — from table above + `measure_time_saved.py` simulation (750 s → 12 s/report). |
 | Synthetic CSV ETL aggregation, 5000 rows/iter (20 iters, local) | — | mean 296.06 ms, p95 746.05 ms | MEASURED by `scripts/bench_factory.py` (stdlib `csv` only, in-memory payload), this machine 2026-09-27. Machine-dependent; p95 reflects cold-start outlier. |
-| ETL/KPI correctness | — | 24 tests pass | MEASURED by `pytest tests/ -v` (CI gate). Correctness, not business latency. |
+| ETL/KPI correctness | — | covered by the suite (see suite figure below) | MEASURED by the CI gate `pytest tests/ -v`. Correctness, not business latency. |
 
 ### Guardrails / SLO links
 
@@ -115,5 +115,15 @@ What gates the live report is the deterministic authorization gate, not a model.
 cd Factory-Data-Automation-v-AI-Reporting-Platform
 python3 scripts/bench_factory.py
 python3 scripts/measure_time_saved.py   # simulation behind the ESTIMATE rows
-python -m pytest tests/ -v              # expect 24 passed
+python -m pytest tests/ -v              # suite size depends on the SHA — see below
 ```
+
+### Suite figure — always cite with its SHA
+
+| Commit | Tests | Where |
+|---|---|---|
+| `be4ace3` (the deployed revision) | 290 | deployed build |
+| `70509fc` (CI) | 288 | CI run |
+
+Never quote a bare test count for this repo without the SHA it was measured at.
+The earlier `24 passed` in this file was stale — it predated both of the above.
