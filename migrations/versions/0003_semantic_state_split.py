@@ -211,29 +211,73 @@ def upgrade() -> None:
         """
     )
 
-    # One semantic row per (run_id, stage), carrying the LATEST attempt.
-    # DISTINCT ON is the honest way to say "newest evidence wins" in one
-    # statement, and doing it in SQL keeps it inside the migration's transaction
-    # rather than depending on application code that may change underneath it.
+    # ── 3b. synthesise ONE semantic row per (run_id, stage) ─────────────────
+    #
+    # PRECEDENCE (this is the rule the whole split turns on):
+    #
+    #     IF ANY historical attempt is SUCCEEDED, the semantic state is SUCCEEDED.
+    #
+    # NOT "latest attempt wins". The previous implementation here was
+    #
+    #     SELECT DISTINCT ON (run_id, stage) ... ORDER BY run_id, stage, attempt DESC
+    #
+    # which is exactly latest-wins, and it silently destroys the evidence the
+    # migration exists to preserve. Consider the real sequence a partial-index
+    # schema permitted:
+    #
+    #     attempt 1  SUCCEEDED      <- the stage really did complete
+    #     attempt 2  FAILED         <- a redelivery, and it failed this time
+    #
+    # Latest-wins migrates that to FAILED. The run then looks incomplete, an
+    # operator replays it, and the side effects execute a SECOND time — the
+    # exact duplicate-execution hazard 0003 was written to remove. Failing the
+    # unit test for that case is cheaper than shipping it.
+    #
+    # Canonical OUTPUT metadata comes from the FIRST successful attempt, not the
+    # last: a later success may itself be evidence of the old duplicate
+    # execution, so letting it overwrite the semantic output would promote the
+    # duplicate as canonical. When no attempt ever succeeded, the canonical row
+    # is simply the latest attempt, which is the honest "newest evidence".
     op.execute(
         """
+        WITH ranked AS (
+            SELECT
+                *,
+                COUNT(*) OVER (PARTITION BY run_id, stage) AS n_attempts,
+                MAX(attempt) OVER (PARTITION BY run_id, stage) AS max_attempt,
+                MIN(CASE WHEN status = 'SUCCEEDED' THEN attempt END)
+                    OVER (PARTITION BY run_id, stage) AS first_success_attempt
+            FROM stage_executions_legacy
+        ),
+        canonical AS (
+            SELECT * FROM ranked
+            WHERE attempt = COALESCE(first_success_attempt, max_attempt)
+        )
         INSERT INTO stage_executions (
             run_id, stage, status, attempt_count, message_id, correlation_id,
             started_at, completed_at, succeeded_at, output_artifact_ref,
             output_checksum, safe_error_code, safe_error_message,
             created_at, updated_at
         )
-        SELECT DISTINCT ON (run_id, stage)
-               run_id, stage, status, attempt,
-               message_id, correlation_id,
-               started_at, completed_at,
-               CASE WHEN status = 'SUCCEEDED'
-                    THEN COALESCE(completed_at, updated_at) END,
-               output_artifact_ref, output_checksum,
-               safe_error_code, safe_error_message,
-               created_at, updated_at
-        FROM stage_executions_legacy
-        ORDER BY run_id, stage, attempt DESC
+        SELECT
+            c.run_id,
+            c.stage,
+            CASE WHEN c.first_success_attempt IS NOT NULL THEN 'SUCCEEDED'
+                 ELSE c.status END,
+            c.n_attempts,
+            c.message_id,
+            c.correlation_id,
+            c.started_at,
+            c.completed_at,
+            CASE WHEN c.first_success_attempt IS NOT NULL
+                 THEN COALESCE(c.completed_at, c.updated_at) END,
+            c.output_artifact_ref,
+            c.output_checksum,
+            c.safe_error_code,
+            c.safe_error_message,
+            c.created_at,
+            c.updated_at
+        FROM canonical c
         """
     )
 
