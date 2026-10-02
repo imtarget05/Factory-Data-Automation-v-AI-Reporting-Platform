@@ -34,6 +34,36 @@ jobs:
   test:
     name: Unit Tests & Coverage
     runs-on: ubuntu-latest
+    # A REAL PostgreSQL 16 service -- not a mock, not SQLite.
+    #
+    # tests/wave2/test_migrations_real_pg.py REFUSES TO COLLECT when
+    # FACTORY_TEST_PG_ADMIN_URL is absent, by design: a migration chain executed
+    # against SQLite proves nothing about a PostgreSQL migration chain, and a
+    # skipped test is indistinguishable from a passing one. So "no database" has
+    # to mean RED. Providing the service below is what makes it mean "the
+    # service was misconfigured" instead of "we quietly stopped checking".
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: factory
+          POSTGRES_PASSWORD: factory
+          POSTGRES_DB: factory
+        ports:
+          - 5432:5432
+        # pg_isready with a retry loop: the job must not start collecting
+        # migrations before the server accepts connections, or the suite fails
+        # for a startup race that has nothing to do with the code under test.
+        options: >-
+          --health-cmd "pg_isready -U factory -d factory"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # 127.0.0.1 rather than the service hostname: these tests create and drop
+      # disposable databases, and the suite is written to run from the host.
+      FACTORY_TEST_PG_ADMIN_URL: postgresql+psycopg2://factory:factory@127.0.0.1:5432/postgres
+
     steps:
       - uses: actions/checkout@v4
 
