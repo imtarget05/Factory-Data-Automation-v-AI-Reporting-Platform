@@ -1,8 +1,10 @@
 # infra/terraform — Factory Azure infrastructure (Terraform)
 
-> **Status: source parity. Not canonical yet.** Bicep under `infra/` remains the
-> migration reference until the parity matrix below is complete and Phase 1
-> closes. See `docs/enterprise-target/TERRAFORM-PARITY-MATRIX.md`.
+> **Status: the only IaC in this repository.** The Bicep stack under `infra/`
+> has been DELETED, together with the parity matrix that used to compare the two.
+> `infra/terraform/` is now the sole infrastructure source of truth, so there is
+> no longer a migration reference to check against — the Terraform is validated
+> on its own terms by `infra/validate.sh`.
 
 ## What this is
 
