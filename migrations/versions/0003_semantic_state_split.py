@@ -310,21 +310,63 @@ def downgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
+    # The column list is EXPLICIT and ordered, and the `id` is generated
+    # explicitly too. Without it PostgreSQL maps the SELECT list onto the table
+    # positionally, so the 16 expression columns started at `id` (integer) and
+    # `run_id` (varchar) landed there instead: DatatypeMismatch on every
+    # downgrade, i.e. the first person to try it found a broken migration.
     op.execute(
-        "INSERT INTO stage_executions_legacy SELECT run_id, stage, attempt, status, "
-        "message_id, correlation_id, started_at, completed_at, input_artifact_ref, "
-        "output_artifact_ref, input_checksum, output_checksum, safe_error_code, "
-        "safe_error_message, created_at, updated_at FROM stage_attempts"
+        "INSERT INTO stage_executions_legacy "
+        "(id, run_id, stage, attempt, status, message_id, correlation_id, "
+        "started_at, completed_at, input_artifact_ref, output_artifact_ref, "
+        "input_checksum, output_checksum, safe_error_code, safe_error_message, "
+        "created_at, updated_at) "
+        "SELECT id, run_id, stage, attempt, status, message_id, correlation_id, "
+        "started_at, completed_at, input_artifact_ref, output_artifact_ref, "
+        "input_checksum, output_checksum, safe_error_code, safe_error_message, "
+        "created_at, updated_at FROM stage_attempts"
     )
     op.drop_table("stage_attempts")
     op.drop_index("ix_stage_executions_lease", table_name="stage_executions")
     op.drop_index("ix_stage_executions_status", table_name="stage_executions")
     op.drop_index("ix_stage_executions_correlation_id", table_name="stage_executions")
     op.drop_index("ix_stage_executions_run_id", table_name="stage_executions")
+    # 0002 declared `id` with index=True, which SQLAlchemy materialises as a
+    # separate index rather than as part of the primary key. It must be dropped
+    # explicitly: the table drop does not take it with it.
+    #
+    # This index is NOT recreated on the legacy table below, and that asymmetry
+    # is deliberate and now tested. The matching `upgrade()` drops it from
+    # stage_executions_legacy with a bare `op.drop_index` (no if_exists), so if
+    # the downgrade left it in place the forward migration would find nothing to
+    # drop and fail. Restoring the 0002 shape exactly -- including its stray
+    # index -- is what makes the round trip close; keeping the index and making
+    # the forward drop tolerant would only hide the asymmetry.
+    op.execute("DROP INDEX IF EXISTS ix_stage_executions_id")
     op.drop_table("stage_executions")
     op.rename_table("stage_executions_legacy", "stage_executions")
+    # Restore the 0002 index set in full. Two of these are load-bearing for the
+    # round trip rather than cosmetic:
+    #
+    #   ix_stage_executions_id   0002 declared `id` with index=True, which
+    #                            SQLAlchemy materialises as a separate index.
+    #   ..._status_started_at    dropped by nothing else, and the forward
+    #                            migration tries to drop it by name.
+    #
+    # Restoring the exact 0002 shape is what lets the forward migration's
+    # bare `op.drop_index` calls find what they expect. A partial restore is
+    # what produced the round-trip failures: the first attempt omitted the id
+    # index, the second omitted this one, and each surfaced only as an
+    # UndefinedObject on the next upgrade.
+    op.create_index("ix_stage_executions_id", "stage_executions", ["id"])
+    op.create_index("ix_stage_executions_run_id", "stage_executions", ["run_id"])
+    op.create_index("ix_stage_executions_run_id_stage", "stage_executions", ["run_id", "stage"])
+    op.create_index("ix_stage_executions_status", "stage_executions", ["status"])
+    op.create_index("ix_stage_executions_correlation_id", "stage_executions", ["correlation_id"])
+    op.create_index(
+        "ix_stage_executions_status_started_at", "stage_executions", ["status", "started_at"]
+    )
     op.execute(
         f"CREATE UNIQUE INDEX uq_stage_executions_semantic_active "
         f"ON stage_executions (run_id, stage) WHERE status IN ({_LIVE})"
     )
-    op.create_index("ix_stage_attempts_status", "stage_attempts", ["status"])
