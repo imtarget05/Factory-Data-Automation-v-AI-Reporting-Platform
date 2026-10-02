@@ -35,18 +35,17 @@ locals {
   # tests/check_plan_invariants.py so a caller cannot weaken it via tfvars.
   private_endpoints_enabled = var.enable_private_endpoints || local.is_prod
 
-  # SKU deltas. Bicep parity used B1ms/Burstable for non-prod and D2ds_v5/
-  # GeneralPurpose for prod.
+  # SKU delta. Bicep parity used B1ms/Burstable for non-prod and D2ds_v5/
+  # GeneralPurpose for prod. The azurerm provider derives the TIER from the sku
+  # name, so only sku_name is declared; an explicit sku_tier variable was
+  # removed as dead after tflint flagged it.
   postgres_sku_name = local.is_prod ? "GP_Standard_D2ds_v5" : "B_Standard_B1ms"
-  postgres_sku_tier = local.is_prod ? "GeneralPurpose" : "Burstable"
 
   storage_replication = local.is_prod ? "GRS" : "LRS"
-  storage_tier        = local.is_prod ? "Standard" : "Standard"
 
   # The target zone model is five. A prod environment with a subset is a hard
   # failure, asserted in the plan checker rather than here, because the checker
   # is where a reader already looks for environment invariants.
-  required_blob_zones = ["raw-landing", "quarantine-corrupt", "silver-clean", "gold-marts", "reports"]
 
   # Private-endpoint zone names, keyed by a short alias the modules use so the
   # full privatelink.* string appears exactly once in this repository.
@@ -61,7 +60,6 @@ locals {
   # subnet. A server delegated to Microsoft.DBforPostgreSQL/flexibleServers and a
   # subnet hosting private endpoints cannot be the same subnet, and mixing them
   # fails at apply with a delegation conflict.
-  postgres_delegated_subnet_name = "snet-psql"
 
   # Non-secret container configuration. Every value here is either a hostname, a
   # mode name, or a connection string for an INGREss endpoint. None of them is a

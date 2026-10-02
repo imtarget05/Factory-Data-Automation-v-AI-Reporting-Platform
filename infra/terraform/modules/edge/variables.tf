@@ -44,11 +44,6 @@ variable "waf_mode" {
   }
 }
 
-variable "waf_excluded_paths" {
-  type        = list(string)
-  description = "Paths excluded from the WAF, e.g. the health endpoint that load balancers poll. Excluding a path is a security decision: each entry is a path an attacker may probe freely."
-  default     = ["/api/v1/health"]
-}
 
 variable "publisher_email" {
   type        = string

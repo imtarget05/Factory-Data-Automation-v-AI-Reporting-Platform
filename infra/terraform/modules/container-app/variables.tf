@@ -61,10 +61,6 @@ variable "image" {
   }
 }
 
-variable "identity_principal_id" {
-  type        = string
-  description = "Principal id of the user-assigned identity this app runs as."
-}
 
 variable "identity_client_id" {
   type        = string

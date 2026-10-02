@@ -93,7 +93,6 @@ module "postgres" {
   administrator_login       = var.postgres_administrator_login
   administrator_password    = var.postgres_administrator_password
   sku_name                  = local.postgres_sku_name
-  sku_tier                  = local.postgres_sku_tier
   enable_private_endpoint   = local.private_endpoints_enabled
   delegated_subnet_id       = local.postgres_delegated_subnet_id
   private_dns_zone_id       = local.private_dns_zone_id.postgres
@@ -148,16 +147,15 @@ module "container_app" {
   log_analytics_id    = module.observability.log_analytics_id
   internal_ingress    = false
 
-  app_name              = local.names.api_app
-  environment_id        = module.container_app.environment_id
-  container_name        = "factory-api"
-  image                 = var.container_image
-  identity_client_id    = module.identity.api_client_id
-  identity_principal_id = module.identity.api_principal_id
-  vault_uri             = module.keyvault.vault_uri
-  secret_names          = var.api_secret_names
-  min_replicas          = var.min_replicas
-  max_replicas          = var.max_replicas
+  app_name           = local.names.api_app
+  environment_id     = module.container_app.environment_id
+  container_name     = "factory-api"
+  image              = var.container_image
+  identity_client_id = module.identity.api_client_id
+  vault_uri          = module.keyvault.vault_uri
+  secret_names       = var.api_secret_names
+  min_replicas       = var.min_replicas
+  max_replicas       = var.max_replicas
 
   # The revision suffix carries the source SHA, so the live revision name is
   # traceable to the commit that produced it.
