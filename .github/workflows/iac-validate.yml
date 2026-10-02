@@ -19,8 +19,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Bicep CLI
-        uses: azure/setup-bicep@v1
+      - name: Install Bicep CLI
+        # The `azure/setup-bicep` action this step used to call no longer exists
+        # (github.com/azure/setup-bicep returns 404), and that is why the IaC
+        # Validation job has been failing since it was added. The Bicep CLI is
+        # still published as a plain release binary, so install it directly and
+        # PIN the version.
+        #
+        # Pinned, not "latest": a moving tag means the validator's behaviour can
+        # change without a commit, and a compiler upgrade is exactly the kind of
+        # change that should be reviewable. Bump this deliberately.
+        run: |
+          set -euo pipefail
+          BICEP_VERSION="0.47.16"
+          # Download into the workspace, then `sudo install`. Writing straight
+          # into /usr/local/bin fails with "Operation not permitted" on the
+          # hosted runner: the file is created root-owned by the image, so the
+          # runner user cannot chmod it. This was the second failure of the
+          # IaC Validation job.
+          curl -sSfL -o bicep \
+            "https://github.com/Azure/bicep/releases/download/v${BICEP_VERSION}/bicep-linux-x64"
+          sudo install -m 0755 bicep /usr/local/bin/bicep
+          rm -f bicep
+          bicep --version
 
       - name: Set up Python
         uses: actions/setup-python@v5

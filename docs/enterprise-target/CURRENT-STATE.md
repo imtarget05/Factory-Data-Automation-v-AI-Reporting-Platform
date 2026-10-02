@@ -17,12 +17,12 @@ rule        : no number appears below unless it was measured here, or is explici
 | Field | Value |
 |---|---|
 | remote | `https://github.com/imtarget05/Factory-Data-Automation-v-AI-Reporting-Platform.git` |
-| **canonical ref (`origin/main`)** | `a56344c` (Render-cleanup merge, PR #1; supersedes `be2fb04` / `a0cd889`) |
-| local `HEAD` | not canonical — see drift row |
-| drift vs origin | `origin/main` is canonical |
+| **canonical ref (`origin/main`)** | `4ac699f` (Render-purge outcome recorded, PR #2; on top of `a56344c` PR #1) |
+| local `HEAD` | not canonical — this branch is `factory/integration`, 3 commits ahead of `origin/main` |
+| drift vs origin | `origin/main` is canonical; `factory/integration` is **+3 / 0** (WAVE 0 ledger, WAVE 1 Terraform, chore) |
 | worktree | **CLEAN** |
 | Render purge | **DONE** — root `render.yaml` + `.github/workflows/keepalive.yml` deleted in PR #1 (merge `a56344c`); anti-Render gate `tests/test_hygiene_no_render.py` (5 tests) merged; `origin/main` tree has **zero** `render.yaml`/`keepalive*` artifacts |
-| unpushed local commit | `8d1f6d4` on `factory/integration` (WAVE 0 baseline + ACT 4 Azure read-only inventory) is **still local only** — not on `origin/main`, not pushed |
+| integration branch | `factory/integration` — **local only, not pushed.** WAVE 0 (`0853743`) and WAVE 1 (`056883f`, Terraform source + plan gate) live here. Nothing in WAVE 0/1 has reached `origin/main` yet |
 | stale writer retired | `ent/enterprise-target @ 03d1f20` retired 2026-10-02 after semantic supersession check (worktree removed, local branch deleted; no remote branch existed). See §7. |
 
 Canonical SHA is `a56344c`; the 2026-10-01 ledger (`563a7d4` +3 docs drift) is superseded.
@@ -36,12 +36,17 @@ pass (72 files).
 
 | Field | Value |
 |---|---|
-| IaC language | **Bicep** (Terraform: **NOT PRESENT** — 0 `*.tf` files) |
-| entrypoints | `infra/main.bicep` |
-| modules | `infra/modules/{apps,database,keyvault,messaging,network,observability,storage}` |
-| parameters | `infra/parameters/{dev,prod}.bicepparam` |
-| invariant checker | `infra/check_invariants.py` |
-| validation | `infra/validate.sh`, `infra/bicepconfig.json` |
+| IaC language | **Bicep** (migration reference) + **Terraform source on `factory/integration`, not yet canonical** — 37 `*.tf` under `infra/terraform/`; **0 `*.tf` on `origin/main`** |
+| Bicep entrypoints | `infra/main.bicep` |
+| Bicep modules | `infra/modules/{apps,database,keyvault,messaging,network,observability,storage}` |
+| Bicep parameters | `infra/parameters/{dev,prod}.bicepparam` |
+| Bicep invariant checker | `infra/check_invariants.py` (181 lines, AST on `.bicep` source) |
+| Bicep validation | `infra/validate.sh`, `infra/bicepconfig.json` |
+| Terraform entrypoints | `infra/terraform/{versions,providers,backend,variables,locals,main,outputs}.tf` |
+| Terraform modules | `infra/terraform/modules/{network,identity,keyvault,storage,postgres,servicebus,eventgrid,container-app,observability,edge}` |
+| Terraform environments | `infra/terraform/environments/{dev,validation,prod}/terraform.tfvars` |
+| Terraform plan gate | `infra/terraform/tests/check_plan_invariants.py` (reads **plan JSON**) + 26 negative controls |
+| Terraform CI | `.github/workflows/terraform-validate.yml` (static job + OIDC transient-plan job) |
 | CI | `.github/workflows/iac-validate.yml` *(also: `ci.yml`, `ci-live.yml`, `build-container.yml`, `llm-gateway.yml`; `keepalive.yml` removed in the Render cleanup)* |
 
 `storage` and `messaging` modules are present → Blob zone + Service Bus seams exist in Bicep.
@@ -59,31 +64,92 @@ pass (72 files).
 - **[factory-clean-clone]** — the canonical suite needs a **generated fixture**; a clean clone cannot reproduce it. `290 passed / 5 skipped / 4 xfailed` at deployed SHA `be4ace3`; the 4 xfailed are **mutation controls that must never pass**. *source: `docs/PORTFOLIO-FLAGSHIP-MATRIX.md`*
 - **[factory-ai-report-guard]** — the quality gate is live AND attested, but the **BAD/UNKNOWN branch was never triggered in the cloud**, and `REAL_MODEL` is unverified (no LLM reachable from the container). *source: same.*
 
-## 5. MEASURED 2026-10-02 @ `a0cd889` (fail-closed for the rest)
+## 5. RE-MEASURED 2026-10-02 @ `4ac699f` + WAVE 0/1 on this branch
 
-- test suite: **303 collected → 294 passed / 5 skipped / 4 xfailed in 9.63 s**
+`origin/main` was fetched first. Canonical is `4ac699f`; this branch rebased
+onto it and carries three additional commits (WAVE 0 ledger, WAVE 1 Terraform,
+and a follow-up chore). Every number below was measured **after** that rebase.
+
+- test suite: **308 collected → 299 passed / 5 skipped / 4 xfailed in 9.91 s**
   via `.venv` Python 3.12, `pytest tests/ -m "not live and not infra" --strict-markers`.
+  The 299 is the 294 WAVE 0 baseline plus the 5 anti-Render hygiene tests that
+  landed in `a56344c`; re-measured here rather than carried from CI run
+  `36915938739`, because a carried figure is not a measured one.
   System Python 3.14 is **NON-CANONICAL**: collection fails (4 errors,
   `ModuleNotFoundError: reportlab`) — missing declared environment
   dependency, NOT a repository regression.
 - ruff: `ruff check app/ tests/` → **All checks passed**;
-  `ruff format --check app/ tests/` → **71 files already formatted**.
+  `ruff format --check app/ tests/` → **72 files already formatted**.
 - fixture: `python -m scripts.verify_fixture --blessed docs/expected/factory-fixture.json`
   → **PASS (schema=factory-fixture-v1, seed=42, 26119 rows)**.
-- CI @ `origin/main`: **SUCCESS on `a0cd889`**
-  (`CI/CD Pipeline` + `Build and Publish API Image to GHCR`,
-  2026-10-01T17:14:21Z via `gh run list`). Previous `e78c6fa` CI run was **failure**.
-- Azure live revision / image digest .... **UNMEASURED** (not probed; no mutation attempted)
-- idempotency (duplicate Blob event / duplicate Service Bus message) .... **UNMEASURED**
-- cost exposure ......................... **UNMEASURED**
+- CI @ `a56344c` / `4ac699f`: run `36915938739`, all jobs green.
+- Terraform: **source present on this branch, NOT canonical.** 37 `*.tf` files
+  under `infra/terraform/`, 10 modules, 3 environments. `terraform 1.16.3` and
+  `trivy 0.74.0` installed; **`tflint` is NOT installed**, so its result is not
+  measured here (CI installs it).
+  - `terraform fmt -check -recursive` → OK
+  - `terraform validate` → **Success! The configuration is valid.**
+  - `python3 infra/terraform/tests/test_check_plan_invariants.py`
+    → **26/26 tests, 24 checker assertions PASS**
+  - `trivy config --severity HIGH,CRITICAL` → **0 HIGH, 0 CRITICAL**
+  - **NOT APPLIED** — zero Azure resources created from this tree. `backend.tf`
+    is deliberately empty; remote state is Phase 2.
+- Render: **purged** in `a56344c` (PR #1). `render.yaml` and
+  `.github/workflows/keepalive.yml` are gone and `tests/test_hygiene_no_render.py`
+  (5 tests) blocks their return. The earlier "Render active deploy state NOT
+  VERIFIED" line is **superseded**: the files no longer exist, so there is no
+  competing deploy path left to verify.
+- Remaining dead/duplicate deploy surface, **not yet removed**:
+  `k8s/40-factory-api-real.yaml`, `k8s/factory-data-src/`, `factory/Dockerfile*`,
+  `docker/Dockerfile*`.
+
+### 5b. Azure read-only inventory — MEASURED 2026-10-02 (no mutation)
+
+`az account show` succeeded, so this is **READ_ONLY_MEASURED**, not blocked.
+
+| Field | Measured value |
+|---|---|
+| subscription | `a3deec78-7edb-41cd-9e94-ec1d4d9379f5` ("Azure subscription 1") |
+| identity | `binhtan5734@gmail.com` (user / interactive) |
+| resource groups | `rg-portfolio-evidence` (eastasia), `NetworkWatcherRG` |
+| Factory resources in `rg-portfolio-evidence` | `ca-factory-api` (Container App), shared `cae-portfolio` (managed env), shared Log Analytics workspace |
+| **No** Factory-specific storage / postgres / service bus / key vault | **absent in this subscription** — the Bicep tree is NOT what is deployed |
+| live revision | `ca-factory-api--0000003` (Active, 1 replica, Healthy, Provisioned) |
+| image | `ghcr.io/…factory-data-automation-v-ai-reporting-platform-factory-api@sha256:7c3e81b7698b7625ef44d7f76ee594d1201acb8622a5497b15d1401e5ed853e2` |
+| identity type | `None` — **no managed identity configured** |
+| secrets | exactly one: `factory-api-key`, bound to env `FACTORY_API_KEY` |
+| ingress | external, targetPort 8000, `allowInsecure: false`, transport Auto |
+| scale | Consumption profile, min 1 / max 1 — **single replica, no worker app** |
+| probes | **none configured** (`probes: []`) |
+| live probe (unauthenticated) | `GET /api/v1/health` → **200** `{"status":"healthy","data_loaded":true}`; `GET /api/v1/kpis` → **401** `{"detail":"missing or invalid X-Factory-API-Key"}` |
+| authenticated success path | **NOT VERIFIED** — no credential used; must not be claimed |
+| `REAL_MODEL` | **NOT VERIFIED** — no LLM reachable from the container; live report is `FALLBACK` |
+
+**Consequence for the program:** the live platform is *one Container App and
+nothing else*. Bicep/Postgres/Blob/Service Bus exist only as source. Rows 3–9
+and 12–14 of the completion matrix stay `UNMEASURED`/`NOT_STARTED`; row 15 is
+`IMPLEMENTED_TESTED` (pipeline proven), runtime deployment of the full topology
+is not.
 
 CARRIED_FORWARD_NOT_REMEASURED (audit docs only — do NOT quote as verified): live revision `ca-factory-api--0000002` running `be4ace3` by digest `sha256:7c3e81b7…` with a SLSA attestation; cloud auth guard rejects unauthenticated requests (401) — **the authenticated success path is NOT VERIFIED** (the probe carried no credential).
 
 ## 6. Hazards
 
 - `$HOME` (`/Users/mainguyenbinhtan`) is a **DIRTY worktree** of `FlashSale-Backend`. `Projects/.git` is an **empty stub** → any git run from `Projects/` resolves to `$HOME`. **All git MUST use `git -C <abs repo path>`.**
-- Terraform is **NOT_STARTED** (0 `*.tf` files). Factory is **THIRD** in migration
-  order (1 MAIA → 2 Helpdesk → 3 Factory). No Terraform edits until Phase 0 closes.
+- Terraform **source exists on `factory/integration`** (37 `*.tf`) and is **NOT
+  canonical**. `origin/main` still has **0 `*.tf`**. Factory is **THIRD** in
+  migration order (1 MAIA → 2 Helpdesk → 3 Factory) — that order is a program
+  decision and is unchanged by the Factory source landing first. Nothing may be
+  applied until Phase 2 (remote state + OIDC) and Phase 3 (import, not recreate).
+- **Second-writer hazard, observed once already.** A separate writer pushed
+  `a56344c` + `4ac699f` to `origin/main` while WAVE 1 was in flight, and left an
+  uncommitted edit to `CURRENT-STATE.md` in this worktree. That edit was a
+  *stale predecessor* of `4ac699f` and would have regressed three already-merged
+  facts (the post-cleanup 299-test measurement, `keepalive.yml` removed from the
+  CI list, and the Render purge itself). Lesson: before rebasing, diff the dirty
+  worktree against `origin/main` and check whether the uncommitted edit is a
+  subset of something already merged. A backup was taken first at
+  `/tmp/c12-backup/CURRENT-STATE.md.worktree-copy`.
 
 ## 7. Stale writer retirement — `ent/enterprise-target @ 03d1f20` (2026-10-02)
 
