@@ -30,10 +30,23 @@ def test_consumer_batch_run_id_is_not_second_resolution():
 
     Asserted on the value rather than on timing: a probabilistic collision test
     would pass most of the time and prove nothing when it did.
+
+    `_record_manifest` is stubbed so this stays a pure identity test. Calling
+    `process_batch` for real pulls in the SQLite manifest table, which exists in
+    a developer's working copy and not in a clean CI checkout -- which is how
+    this first landed as a failure about a missing table rather than about run
+    identity.
     """
     consumer = TelemetryConsumer()
+    consumer._record_manifest = lambda **_: None  # type: ignore[method-assign]
+
     result = consumer.process_batch([{"id": "m1", "Machine_ID": "M", "Date": "d", "Line": "L"}])
-    assert not result["run_id"].endswith("000000") or "-" in result["run_id"]
+    run_id = result["run_id"]
+
+    # Old format was `run-20261002120000`: 14 digits, all numeric, no hyphens.
+    timestamp_part = run_id.removeprefix("run-")
+    assert not timestamp_part.isdigit(), f"second-resolution run_id regressed: {run_id}"
+    assert new_run_id() != run_id
 
 
 def test_manifest_write_failure_is_not_swallowed():
