@@ -215,7 +215,13 @@ def test_t5_a_brand_new_process_dedupes_from_the_database_alone(session):
     run_id = new_run_id()
     # The URL, not the bound Connection: `get_bind()` returns a live Connection
     # here, and a second engine has to be built from a URL string.
-    url = str(session.get_bind().engine.url)
+    #
+    # `render_as_string(hide_password=False)` is required, not stylistic. Plain
+    # `str(url)` masks the password as `***`, so the derived engine authenticates
+    # with the literal string "***" and every one of these tests fails in CI with
+    # an auth error while passing locally against a trust-authenticated socket.
+    # Local Docker sockets often use `trust`, which hides the mistake entirely.
+    url = session.get_bind().engine.url.render_as_string(hide_password=False)
     engine_a = create_engine(url, future=True)
     with engine_a.begin() as conn:
         first = SideEffectCounter()
@@ -261,7 +267,7 @@ def test_t3_two_workers_race_the_same_stage(session):
     Uses two engines rather than two calls in one Session, because two calls in
     one Session share a transaction and would not exercise the constraint at all.
     """
-    url = str(session.get_bind().engine.url)
+    url = session.get_bind().engine.url.render_as_string(hide_password=False)
     run_id = new_run_id()
     engines = [create_engine(url, future=True) for _ in range(2)]
     outcomes = []
@@ -349,7 +355,7 @@ def test_t13_a_fenced_owner_cannot_publish_its_result(session):
     two published outputs for one stage.
     """
     run_id = new_run_id()
-    url = str(session.get_bind().engine.url)
+    url = session.get_bind().engine.url.render_as_string(hide_password=False)
 
     engine_a = create_engine(url, future=True)
     with engine_a.begin() as conn:
