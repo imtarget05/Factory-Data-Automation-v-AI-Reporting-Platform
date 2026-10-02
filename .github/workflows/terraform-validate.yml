@@ -139,11 +139,29 @@ jobs:
     # The credentialed half. Only the validation environment, and plan only —
     # never an apply, and never prod. The apply-to-prod path is a separate,
     # manually approved workflow and belongs to Phase 2.
+    #
+    # WHY THIS IS GATED ON A REPO VARIABLE. The job needs a GitHub-to-Azure OIDC
+    # federated credential that DOES NOT EXIST YET — Phase 2 has not run. Without
+    # this gate the job ran on every push to main, called `azure/login`, and died
+    # there with a raw auth error, leaving main permanently red since PR #3
+    # (runs 36951308788 and 36952596418).
+    #
+    # A permanently red pipeline is not a working gate: it teaches people to
+    # ignore red, which is how a genuine failure gets waved through. But the
+    # opposite mistake is worse — quietly deleting the job, or letting it pass,
+    # would leave nobody knowing that the credentialed half has NEVER run and
+    # proves nothing today. So it is neither hidden nor enforced: it waits for
+    # an explicit, auditable flip.
+    #
+    # To enable: provision the federated credential, then set the repository
+    # variable TERRAFORM_OIDC_WIRED=true. Until then the OFFLINE `static` job is
+    # the hard gate, and it covers fmt, validate, tflint, trivy and the
+    # plan-invariant controls.
     name: plan (validation, transient)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: static
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && vars.TERRAFORM_OIDC_WIRED == 'true'
     permissions:
       contents: read
       id-token: write          # OIDC. NO AZURE_CLIENT_SECRET — see Phase 2.
