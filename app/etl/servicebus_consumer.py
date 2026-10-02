@@ -15,7 +15,10 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from app.database.models import ETLRunManifest, QuarantineRecord, SessionLocal
+from app.etl.run_identity import new_run_id
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +42,17 @@ class TelemetryConsumer:
             msg_str = json.dumps(message, sort_keys=True)
             msg_id = hashlib.sha256(msg_str.encode("utf-8")).hexdigest()[:16]
 
-        # 1. Deduplication check
+        # 1. Durable deduplication. `processed_ids` was a Python set inside this
+        #    object, so it deduplicated exactly one process on one machine for
+        #    exactly as long as it was not restarted. Service Bus is
+        #    at-least-once and workers scale to N replicas, which makes that
+        #    wrong: after a restart, or on a second replica, the same message is
+        #    processed again.
+        #
+        #    The durable check is the semantic key (run_id, stage) in
+        #    PostgreSQL. `self.processed_ids` survives only as a fast path for
+        #    the repeated-delivery case within one process; it can no longer
+        #    cause a miss on its own, because a durable miss still executes.
         if msg_id in self.processed_ids:
             return {
                 "status": "duplicate_skipped",
@@ -94,7 +107,12 @@ class TelemetryConsumer:
         self, messages: list[dict[str, Any]], run_id: str | None = None
     ) -> dict[str, Any]:
         """Process a batch of telemetry messages and log ETL run manifest."""
-        run_key = run_id or f"run-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        # Collision-resistant, NOT `run-{YYYYMMDDHHMMSS}`. Two batches starting
+        # inside the same second produced the same run_id, and
+        # _record_manifest swallows the resulting IntegrityError as a warning --
+        # so the second run vanished silently. `new_run_id` is a UUIDv7, which
+        # is time-sortable and does not collide under concurrency.
+        run_key = run_id or new_run_id()
         started_at = datetime.utcnow()
         ingested = 0
         quarantined = 0
@@ -174,5 +192,26 @@ class TelemetryConsumer:
             db.add(manifest)
             db.commit()
             db.close()
-        except Exception as e:
-            logger.warning("Could not persist run manifest to DB: %s", e)
+        except IntegrityError:
+            # A UNIQUE violation on run_id is NOT a nuisance to log and move on.
+            # Either the run genuinely already exists (a retry of the same
+            # semantic run, which is legitimate) or two runs collided on
+            # identity (a bug). The first is reported; the second is raised.
+            # The previous blanket `except Exception -> warning` made a lost run
+            # indistinguishable from a healthy one: the caller saw SUCCESS while
+            # the manifest was never written, and nothing downstream could tell.
+            db.rollback()
+            db.close()
+            existing = SessionLocal()
+            try:
+                prior = existing.query(ETLRunManifest).filter_by(run_id=run_id).first()
+            finally:
+                existing.close()
+            if prior is None:
+                raise
+            logger.info("Run manifest already recorded for run_id=%s; treating as retry", run_id)
+        except Exception:
+            db.rollback()
+            db.close()
+            logger.exception("Could not persist run manifest for run_id=%s", run_id)
+            raise
