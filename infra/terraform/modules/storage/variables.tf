@@ -33,15 +33,6 @@ variable "resource_group_name" {
 }
 
 
-variable "name_prefix" {
-  type        = string
-  description = "Short, lowercase-alphanumeric name prefix. Azure resource names are globally unique for storage/keyvault, so this must be specific per environment."
-  default     = "fac"
-  validation {
-    condition     = can(regex("^[a-z0-9]{3,10}$", var.name_prefix))
-    error_message = "name_prefix must be 3-10 lowercase alphanumeric characters."
-  }
-}
 
 variable "account_tier" {
   type        = string

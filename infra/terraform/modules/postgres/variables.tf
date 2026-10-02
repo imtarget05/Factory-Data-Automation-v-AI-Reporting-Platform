@@ -44,10 +44,6 @@ variable "sku_name" {
   description = "Compute SKU. Bicep parity: Standard_D2ds_v5 in prod, Standard_B1ms elsewhere."
 }
 
-variable "sku_tier" {
-  type        = string
-  description = "Compute tier. Bicep parity: GeneralPurpose in prod, Burstable elsewhere."
-}
 
 variable "storage_mb" {
   type        = number
@@ -84,11 +80,6 @@ variable "enable_private_endpoint" {
   }
 }
 
-variable "public_network_access_enabled" {
-  type        = bool
-  description = "Whether the server accepts public traffic. Asserted false whenever private endpoint access is on."
-  default     = true
-}
 
 variable "high_availability_enabled" {
   type        = bool
