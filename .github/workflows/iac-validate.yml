@@ -30,10 +30,17 @@ jobs:
         # change without a commit, and a compiler upgrade is exactly the kind of
         # change that should be reviewable. Bump this deliberately.
         run: |
+          set -euo pipefail
           BICEP_VERSION="0.47.16"
-          curl -sSfL -o /usr/local/bin/bicep \
+          # Download into the workspace, then `sudo install`. Writing straight
+          # into /usr/local/bin fails with "Operation not permitted" on the
+          # hosted runner: the file is created root-owned by the image, so the
+          # runner user cannot chmod it. This was the second failure of the
+          # IaC Validation job.
+          curl -sSfL -o bicep \
             "https://github.com/Azure/bicep/releases/download/v${BICEP_VERSION}/bicep-linux-x64"
-          chmod +x /usr/local/bin/bicep
+          sudo install -m 0755 bicep /usr/local/bin/bicep
+          rm -f bicep
           bicep --version
 
       - name: Set up Python

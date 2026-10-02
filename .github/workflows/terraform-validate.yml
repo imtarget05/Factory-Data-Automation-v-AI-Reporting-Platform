@@ -83,11 +83,27 @@ jobs:
         run: terraform validate
 
       - name: tflint
+        # This is the step that makes WAVE 1's tflint status MEASURED. It was
+        # NOT MEASURED locally because tflint is not installed on the dev
+        # machine, so this job is the only place the lint has ever actually run.
+        #
+        # The `-L` is load-bearing. GitHub release assets answer 302 to a CDN,
+        # and without `--location` curl saves the redirect body — which unzip
+        # then rejects with "End-of-central-directory signature not found". That
+        # exact error is why the first run of this job failed.
+        #
+        # Downloaded to the workspace and `sudo install`ed, rather than written
+        # straight into /usr/local/bin: the runner user cannot chmod a file it
+        # does not own, which is the second failure this job produced.
         run: |
-          curl -sSf -o tflint.zip \
-            https://github.com/terraform-linters/tflint/releases/download/v0.59.1/tflint_linux_amd64.zip
-          unzip -q tflint.zip
+          set -euo pipefail
+          TFLINT_VERSION="0.59.1"
+          curl -sSfL -o tflint.zip \
+            "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/tflint_linux_amd64.zip"
+          unzip -qo tflint.zip
           sudo install -m 0755 tflint /usr/local/bin/tflint
+          rm -f tflint.zip tflint
+          tflint --version
           tflint --init
           tflint --recursive --format compact
 
