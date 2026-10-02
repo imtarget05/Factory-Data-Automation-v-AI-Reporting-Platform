@@ -8,6 +8,13 @@ plotly>=5.18.0
 fastapi>=0.100.0
 uvicorn>=0.23.0
 sqlalchemy>=2.0.0
+# Schema migration framework (WAVE 2). Pinned EXACTLY, unlike every other entry
+# here, and that inconsistency is deliberate: ordering, transaction boundaries
+# and downgrade semantics are part of your schema's history, so a floating range
+# means the meaning of an applied revision can change underneath you.
+# Verified compatible: Python 3.12.13 / SQLAlchemy 2.1.1 vs alembic >=3.10 /
+# SQLAlchemy>=2.0. Rationale: docs/enterprise-target/DEPENDENCY-CHANGE-ALEMBIC.md
+alembic==1.20.0
 python-multipart>=0.0.6
 reportlab>=4.0.0
 faker>=20.0.0
