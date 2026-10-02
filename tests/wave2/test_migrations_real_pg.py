@@ -398,7 +398,247 @@ def test_m3_re_upgrade_preserves_data(fresh_db):
     assert count == 1, "a no-op upgrade destroyed data"
 
 
-def test_m1_chain_is_linear_and_rooted():
+def _legacy_attempt(run_id: str, stage: str, attempt: int, status: str, **overrides):
+    """One row in the PRE-split schema (revision 0002's stage_executions)."""
+    now = "now()"
+    cols = {
+        "run_id": f"'{run_id}'",
+        "stage": f"'{stage}'",
+        "attempt": str(attempt),
+        "status": f"'{status}'",
+        "message_id": f"'msg-{run_id}-{attempt}'",
+        "correlation_id": f"'corr-{run_id}'",
+        "started_at": now,
+        "completed_at": now if status in {"SUCCEEDED", "FAILED", "DEAD_LETTERED"} else "NULL",
+        "input_artifact_ref": f"'blob/raw/{run_id}.parquet'",
+        "output_artifact_ref": f"'blob/gold/{run_id}-a{attempt}.json'",
+        "input_checksum": "'" + "a" * 64 + "'",
+        "output_checksum": ("'" + chr(97 + attempt) * 64 + "'")
+        if status == "SUCCEEDED"
+        else "NULL",
+        "safe_error_code": "'E_TRANSIENT'" if status in {"FAILED", "RETRYABLE"} else "NULL",
+        "safe_error_message": "'upstream timeout'" if status in {"FAILED", "RETRYABLE"} else "NULL",
+        "created_at": now,
+        "updated_at": now,
+    }
+    cols.update(overrides)
+    names = ", ".join(cols)
+    values = ", ".join(str(v) for v in cols.values())
+    return f"INSERT INTO stage_executions ({names}) VALUES ({values})"
+
+
+def _seed_legacy(url: str, statements: list[str]) -> None:
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            for stmt in statements:
+                conn.execute(text(stmt))
+    finally:
+        engine.dispose()
+
+
+def _semantic_row(url: str, run_id: str, stage: str) -> dict | None:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as conn:
+            row = (
+                conn.execute(
+                    text(
+                        "SELECT status, attempt_count, output_artifact_ref, succeeded_at "
+                        "FROM stage_executions WHERE run_id = :r AND stage = :s"
+                    ),
+                    {"r": run_id, "s": stage},
+                )
+                .mappings()
+                .first()
+            )
+            return dict(row) if row else None
+    finally:
+        engine.dispose()
+
+
+def _attempts(url: str, run_id: str, stage: str) -> list[dict]:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as conn:
+            rows = (
+                conn.execute(
+                    text(
+                        "SELECT attempt, status, output_artifact_ref FROM stage_attempts "
+                        "WHERE run_id = :r AND stage = :s ORDER BY attempt"
+                    ),
+                    {"r": run_id, "s": stage},
+                )
+                .mappings()
+                .all()
+            )
+            return [dict(r) for r in rows]
+    finally:
+        engine.dispose()
+
+
+def _m2_db(name: str) -> str:
+    from sqlalchemy.engine import make_url
+
+    from tests.wave2.migration_harness import make_database
+
+    make_database(ADMIN_URL, name)
+    return make_url(ADMIN_URL).set(database=name).render_as_string(hide_password=False)
+
+
+def test_m2_b4_succeeded_then_failed_stays_succeeded(server):
+    """B4 — THE decisive case. A later FAILED must not erase an earlier success.
+
+    attempt 1 SUCCEEDED, attempt 2 FAILED.
+
+    Latest-wins would migrate this to FAILED, the run would look incomplete, an
+    operator would replay it, and the side effects would execute a second time —
+    the duplicate-execution hazard 0003 exists to remove. So this assertion is
+    not tidiness; it is the load-bearing claim of the whole split.
+    """
+    name = f"w2_b4_{uuid.uuid4().hex[:8]}"
+    url = _m2_db(name)
+    try:
+        upgrade_to(url, PREVIOUS)
+        _seed_legacy(
+            url,
+            [
+                _legacy_attempt("run-b4", "GOLD", 1, "SUCCEEDED"),
+                _legacy_attempt("run-b4", "GOLD", 2, "FAILED"),
+            ],
+        )
+        upgrade_to(url, HEAD)
+
+        semantic = _semantic_row(url, "run-b4", "GOLD")
+        assert semantic is not None, "no semantic row was synthesised"
+        assert semantic["status"] == "SUCCEEDED", (
+            "the migration erased an earlier success because the LAST attempt "
+            f"failed; semantic status is {semantic['status']!r}. The stage had "
+            "already completed and replaying it would duplicate side effects."
+        )
+        assert semantic["succeeded_at"] is not None, (
+            "SUCCEEDED with no succeeded_at violates ck_stage_executions_succeeded_final"
+        )
+        assert semantic["attempt_count"] == 2, (
+            f"attempt_count={semantic['attempt_count']!r}; both attempts must be counted"
+        )
+
+        attempts = _attempts(url, "run-b4", "GOLD")
+        assert len(attempts) == 2, f"attempt history was lost: {attempts}"
+        assert [a["status"] for a in attempts] == ["SUCCEEDED", "FAILED"]
+    finally:
+        drop_database(ADMIN_URL, name)
+
+
+def test_m2_b5_duplicate_success_keeps_one_semantic_row(server):
+    """B5 — two historical successes: one semantic row, both attempts kept.
+
+    Two SUCCEEDED attempts IS the evidence that the old partial-index schema
+    allowed a completed stage to execute twice. It must be preserved as history
+    and not cleaned up, while the semantic row stays single and SUCCEEDED.
+    """
+    name = f"w2_b5_{uuid.uuid4().hex[:8]}"
+    url = _m2_db(name)
+    try:
+        upgrade_to(url, PREVIOUS)
+        _seed_legacy(
+            url,
+            [
+                _legacy_attempt("run-b5", "GOLD", 1, "SUCCEEDED"),
+                _legacy_attempt("run-b5", "GOLD", 2, "SUCCEEDED"),
+            ],
+        )
+        upgrade_to(url, HEAD)
+
+        engine = create_engine(url)
+        try:
+            with engine.connect() as conn:
+                n = conn.execute(
+                    text("SELECT count(*) FROM stage_executions WHERE run_id = 'run-b5'")
+                ).scalar_one()
+        finally:
+            engine.dispose()
+        assert n == 1, f"duplicate success produced {n} semantic rows, expected 1"
+
+        semantic = _semantic_row(url, "run-b5", "GOLD")
+        assert semantic["status"] == "SUCCEEDED"
+        assert semantic["attempt_count"] == 2, (
+            f"attempt_count={semantic['attempt_count']!r}; the duplicate execution "
+            "must stay visible as evidence, not be erased"
+        )
+        assert len(_attempts(url, "run-b5", "GOLD")) == 2, "history was cleaned up"
+    finally:
+        drop_database(ADMIN_URL, name)
+
+
+def test_m2_b5_canonical_output_is_the_first_success(server):
+    """Canonical output metadata comes from the FIRST success, not the last.
+
+    A later success may itself BE the duplicate execution. Promoting it to
+    canonical would make the duplicate the artifact downstream consumers read.
+    """
+    name = f"w2_b5o_{uuid.uuid4().hex[:8]}"
+    url = _m2_db(name)
+    try:
+        upgrade_to(url, PREVIOUS)
+        _seed_legacy(
+            url,
+            [
+                _legacy_attempt(
+                    "run-b5o",
+                    "GOLD",
+                    1,
+                    "SUCCEEDED",
+                    output_artifact_ref="'blob/gold/FIRST.json'",
+                ),
+                _legacy_attempt(
+                    "run-b5o",
+                    "GOLD",
+                    2,
+                    "SUCCEEDED",
+                    output_artifact_ref="'blob/gold/SECOND.json'",
+                ),
+            ],
+        )
+        upgrade_to(url, HEAD)
+
+        semantic = _semantic_row(url, "run-b5o", "GOLD")
+        assert semantic["output_artifact_ref"] == "blob/gold/FIRST.json", (
+            "canonical output came from "
+            f"{semantic['output_artifact_ref']!r}; it must be the FIRST successful "
+            "attempt, because a later success may be the duplicate execution"
+        )
+    finally:
+        drop_database(ADMIN_URL, name)
+
+
+def test_m2_b1_b2_b3_ordinary_rows_migrate_faithfully(server):
+    """B1 RUNNING, B2 SUCCEEDED, B3 RETRYABLE — the ordinary cases still migrate."""
+    name = f"w2_b123_{uuid.uuid4().hex[:8]}"
+    url = _m2_db(name)
+    try:
+        upgrade_to(url, PREVIOUS)
+        _seed_legacy(
+            url,
+            [
+                _legacy_attempt("run-b1", "SILVER", 1, "RUNNING"),
+                _legacy_attempt("run-b2", "SILVER", 1, "SUCCEEDED"),
+                _legacy_attempt("run-b3", "GOLD", 1, "RETRYABLE"),
+            ],
+        )
+        upgrade_to(url, HEAD)
+
+        assert _semantic_row(url, "run-b1", "SILVER")["status"] == "RUNNING"
+        assert _semantic_row(url, "run-b2", "SILVER")["status"] == "SUCCEEDED"
+
+        b3 = _semantic_row(url, "run-b3", "GOLD")
+        assert b3["status"] == "RETRYABLE", (
+            "no attempt ever succeeded, so the latest status must carry "
+            f"through, got {b3['status']!r}"
+        )
+        assert b3["succeeded_at"] is None, "a RETRYABLE stage must have no succeeded_at"
+    finally:
+        drop_database(ADMIN_URL, name)
     """No second competing 'initial' revision, and no branching."""
     assert list(REVISION_CHAIN) == [BASELINE, PREVIOUS, HEAD], (
         f"unexpected revision chain: {REVISION_CHAIN}"
