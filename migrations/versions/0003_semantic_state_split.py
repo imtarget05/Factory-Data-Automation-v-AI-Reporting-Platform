@@ -92,7 +92,16 @@ def upgrade() -> None:
     # `ix_stage_executions_id` still exists and the new table's id index cannot
     # be created. The data is all that is being carried forward, so the indexes
     # are genuinely disposable here and are rebuilt by the new CREATE blocks.
+    #
+    # `ix_stage_executions_id` MUST be in this list. It was missing, and its
+    # absence made `alembic upgrade head` fail on an EMPTY database with
+    #     DuplicateTable: relation "ix_stage_executions_id" already exists
+    # because the rename carried the old index forward under its original name
+    # and the new CREATE could not reuse it. The comment above already named the
+    # index as the blocker; the list just never got updated to match. Proof that
+    # the chain had never been run against a real PostgreSQL.
     for legacy_index in (
+        "ix_stage_executions_id",
         "uq_stage_executions_semantic_active",
         "ix_stage_executions_status_started_at",
         "ix_stage_executions_correlation_id",
