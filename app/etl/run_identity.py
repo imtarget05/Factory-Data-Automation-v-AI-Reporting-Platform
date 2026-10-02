@@ -48,12 +48,21 @@ import uuid
 
 __all__ = ["new_run_id", "new_source_id", "uuid7", "RunIdCollisionError"]
 
-# Monotonic guard. Two UUIDv7 values minted inside the same millisecond must not
-# share a timestamp, otherwise the "time-ordered" property degrades to a
-# per-millisecond bucket. The lock makes the read-modify-write of _LAST_MS safe
-# across threads; the process-local cache makes it cheap under load.
+# Monotonic guard. Two UUIDv7 values minted inside the same millisecond must
+# not merely share a timestamp — they must still be strictly increasing, or
+# "time-ordered" silently degrades to "ordered per millisecond" and a burst
+# inside one millisecond (the case a busy worker actually hits) sorts
+# arbitrarily. The lock makes the read-modify-write of _LAST_MS/_SEQ safe across
+# threads; the process-local counter makes it cheap under load.
 _LOCK = threading.Lock()
 _LAST_MS = 0
+_SEQ = 0
+_RAND_A = 0
+
+# Width of the monotonic field. RFC 9562 section 5.7 splits the 74 random bits
+# into rand_a (12) and rand_b (62). The sequence lives in rand_b, which gives
+# 2^62 ids per millisecond before it could ever wrap in practice.
+_SEQ_MASK = (1 << 62) - 1
 
 
 class RunIdCollisionError(RuntimeError):
@@ -71,28 +80,55 @@ class RunIdCollisionError(RuntimeError):
 def uuid7() -> uuid.UUID:
     """Return a time-ordered UUIDv7 (RFC 9562 section 5.7).
 
-    Layout: 48-bit big-endian Unix ms timestamp | version/variant bits | random.
+    Layout:
+        48 bit unix_ts_ms | ver(4)=0b0111 | rand_a(12) | var(2)=0b10 | seq(62)
     """
-    global _LAST_MS
+    global _LAST_MS, _SEQ, _RAND_A
 
     with _LOCK:
-        # A clock that steps backwards (NTP correction, a container resuming
-        # from a snapshot) would otherwise emit an id that sorts before ones
-        # already issued, breaking the ordering the audit ledger relies on.
-        # Clamping to _LAST_MS degrades uniqueness to the random field, which is
-        # exactly the design intent.
-        ms = max(int(time.time() * 1000), _LAST_MS)
-        _LAST_MS = ms
+        now_ms = int(time.time() * 1000)
+        if now_ms > _LAST_MS:
+            # A new millisecond: reseed both random fields so ids minted in
+            # different milliseconds do not form a countable run.
+            _LAST_MS = now_ms
+            _RAND_A = int.from_bytes(os.urandom(2), "big") & 0xFFF
+            _SEQ = int.from_bytes(os.urandom(8), "big") & _SEQ_MASK
+        else:
+            # Same millisecond, or a clock that stepped BACKWARDS (NTP
+            # correction, a container resuming from a snapshot). Either way the
+            # timestamp must not go backwards, or the audit ledger's ordering
+            # becomes a lie, so clamp to _LAST_MS and keep counting.
+            #
+            # Counting rather than merely clamping is the fix for the defect the
+            # W2-1 tests found: the original guard pinned the timestamp but drew
+            # fresh randomness, so two ids in one millisecond sorted
+            # arbitrarily — exactly what this function promises not to do.
+            _SEQ = (_SEQ + 1) & _SEQ_MASK
+        ms = _LAST_MS
+        rand_a = _RAND_A
+        seq = _SEQ
 
-    # 6 bytes timestamp + 2 bytes of randomness per millisecond is not enough on
-    # its own for a busy worker, so the low 62 bits carry the full os.urandom
-    # draw. 10 random bytes is the RFC's recommendation for the remaining space.
-    rand = os.urandom(10)
-    value = (
-        (ms << 80)
-        | (0x7 << 76)  # version 7
-        | int.from_bytes(rand, "big")
-    )
+    # BIT LAYOUT WAS WRONG — corrected here, caught by the W2-1 tests.
+    #
+    # The previous code did:
+    #
+    #     value = (ms << 80) | (0x7 << 76) | int.from_bytes(rand, "big")
+    #
+    # with `rand` being 10 bytes = 80 bits. But bits 76..79 are the VERSION
+    # nibble and bits 74..63 are the VARIANT, so an 80-bit random draw OVERWRITES
+    # both. Every id came out with `UUID.version is None` and `UUID.variant`
+    # unset — not a UUIDv7 at all, and not detectable as one by anything that
+    # reads the standard fields. It was still unique and still roughly ordered,
+    # which is why the defect survived.
+    #
+    # RFC 9562 section 5.7:
+    #     48 bit unix_ts_ms | ver(4)=0b0111 | rand_a(12) | var(2)=0b10 | rand_b(62)
+    #
+    # rand_a MUST be held constant for the whole millisecond. It sits ABOVE the
+    # sequence in the value, so a fresh rand_a per call would decide the sort
+    # order and make the sequence irrelevant — which is precisely the defect the
+    # W2-1 monotonicity test catches, one level below the timestamp bug.
+    value = (ms << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | seq
     return uuid.UUID(int=value)
 
 
