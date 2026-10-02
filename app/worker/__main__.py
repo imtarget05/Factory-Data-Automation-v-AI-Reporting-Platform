@@ -53,11 +53,6 @@ def default_stage_handler(envelope: Envelope) -> dict[str, object]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app.worker", description="Factory ETL worker")
     parser.add_argument(
-        "--database-url",
-        default=os.getenv("DATABASE_URL", DATABASE_URL),
-        help="SQLAlchemy URL for the durable run-state database",
-    )
-    parser.add_argument(
         "--owner",
         default=os.getenv("FACTORY_WORKER_OWNER"),
         help="stable identity for this worker instance; empty means generate one",
@@ -84,10 +79,17 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     owner = args.owner or f"worker-{os.getpid()}"
+    # DATABASE_URL only, never a CLI flag. A connection string passed on the
+    # command line is readable by every process on the host through /proc and
+    # lands in shell history, so it comes from the environment where an
+    # orchestrator can inject it from a secret store. Sonar flagged this as
+    # connection-string injection; the fix was to remove the path rather than to
+    # document it.
+    database_url = os.getenv("DATABASE_URL", DATABASE_URL)
     # A local transport here only. The Azure adapter implements the same
     # Transport protocol and plugs in at this line.
     transport = InMemoryTransport(max_deliveries=int(os.getenv("FACTORY_MAX_DELIVERIES", "5")))
-    engine = create_engine(args.database_url, future=True, pool_pre_ping=True)
+    engine = create_engine(database_url, future=True, pool_pre_ping=True)
     session_factory = sessionmaker(bind=engine, future=True)
 
     logger.info(

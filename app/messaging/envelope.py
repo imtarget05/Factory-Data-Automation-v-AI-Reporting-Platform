@@ -127,16 +127,13 @@ def _parse_occurred_at(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def parse_envelope(raw: Any, *, stage_validator: Any = None) -> Envelope:
-    """Validate and parse one message body.
+def _parse_body(raw: Any) -> dict[str, Any]:
+    """Decode a transport body into a mapping, rejecting anything else.
 
-    Every rejection raises EnvelopeError with a stable `code`, because the DLQ
-    record and the retry decision both key off that code rather than off the
-    message text, which would change with every reword.
-
-    Order matters: the version is checked FIRST so that a v2 message is reported
-    as an unsupported version rather than failing piecemeal on fields that may
-    not exist yet.
+    Split out of `parse_envelope` on purpose: this is pure shape handling with
+    no business meaning, and folding it into the main validator pushed that
+    function past the cognitive-complexity limit, where every additional field
+    check becomes harder to see.
     """
     if isinstance(raw, (bytes, bytearray)):
         try:
@@ -154,18 +151,37 @@ def parse_envelope(raw: Any, *, stage_validator: Any = None) -> Envelope:
 
     if not isinstance(raw, dict):
         raise EnvelopeError("ENVELOPE_NOT_OBJECT", "body must decode to an object")
+    return raw
 
+
+def _check_version(raw: dict[str, Any]) -> int:
+    """Reject an unknown schema version BEFORE reading any field.
+
+    Fails closed on purpose. Accepting a version we do not know and reading the
+    fields we happen to recognise is how a producer adds a field that means
+    something different and the pipeline silently processes the wrong thing.
+    """
     version = raw.get("schema_version")
     if not isinstance(version, int) or isinstance(version, bool):
         raise EnvelopeError("ENVELOPE_VERSION_MISSING", "schema_version must be an integer")
     if version not in SUPPORTED_VERSIONS:
-        # Fail closed. Accepting an unknown version and reading the fields we
-        # happen to recognise is how a producer adds a field that means something
-        # different and the pipeline silently processes the wrong thing.
         raise EnvelopeError(
             "ENVELOPE_VERSION_UNSUPPORTED",
-            f"schema_version {version} is not supported; this worker reads {sorted(SUPPORTED_VERSIONS)}",
+            f"schema_version {version} is not supported; this worker reads "
+            f"{sorted(SUPPORTED_VERSIONS)}",
         )
+    return version
+
+
+def parse_envelope(raw: Any, *, stage_validator: Any = None) -> Envelope:
+    """Validate and parse one message body.
+
+    Every rejection raises EnvelopeError with a stable `code`, because the DLQ
+    record and the retry decision both key off that code rather than off the
+    message text, which would change with every reword.
+    """
+    raw = _parse_body(raw)
+    version = _check_version(raw)
 
     message_id = _require_identifier(raw, "message_id")
     source_id = _require_identifier(raw, "source_id")
