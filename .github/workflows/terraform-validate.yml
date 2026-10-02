@@ -55,10 +55,20 @@ jobs:
         with:
           python-version: '3.12'
 
-      - uses: aquasecurity/setup-trivy@v0.2.3
-        with:
-          version: v0.74.0
-          cache: false
+      # `aquasecurity/setup-trivy@v0.2.3` DOES NOT EXIST. The real tags are
+      # v0.2.6, v0.3.0 and v0.3.1; v0.2.3 was guessed, so the job died at action
+      # resolution before a single line of this workflow ran.
+      #
+      # Installing from the official script instead of an action: the action is
+      # a thin wrapper around exactly this download, and depending on a
+      # third-party action's tag for a security gate adds a supply-chain edge
+      # without adding a capability. The version is PINNED to 0.74.0, which is
+      # the version the local measurement was taken with, so CI and local agree.
+      - name: Install Trivy
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.74.0
+          trivy --version
 
       - name: terraform fmt
         run: terraform fmt -check -recursive -diff
