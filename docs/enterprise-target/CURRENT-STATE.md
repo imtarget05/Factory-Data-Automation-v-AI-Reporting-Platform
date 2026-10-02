@@ -36,14 +36,13 @@ pass (72 files).
 
 | Field | Value |
 |---|---|
-| IaC language | **Bicep** (migration reference) + **Terraform source on `factory/integration`, not yet canonical** — 37 `*.tf` under `infra/terraform/`; **0 `*.tf` on `origin/main`** |
-| Bicep entrypoints | `infra/main.bicep` |
-| Bicep modules | `infra/modules/{apps,database,keyvault,messaging,network,observability,storage}` |
-| Bicep parameters | `infra/parameters/{dev,prod}.bicepparam` |
-| Bicep invariant checker | `infra/check_invariants.py` (181 lines, AST on `.bicep` source) |
-| Bicep validation | `infra/validate.sh`, `infra/bicepconfig.json` |
+| IaC language | **Terraform — SOURCE_CANONICAL.** Bicep **REMOVED** (see `docs/evidence/terraform-migration/final-bicep-parity.md`). 47 `*.tf` under `infra/terraform/`; **0** `*.bicep` / `*.bicepparam` remain. |
 | Terraform entrypoints | `infra/terraform/{versions,providers,backend,variables,locals,main,outputs}.tf` |
-| Terraform modules | `infra/terraform/modules/{network,identity,keyvault,storage,postgres,servicebus,eventgrid,container-app,observability,edge}` |
+| Terraform modules | `infra/terraform/modules/{network,identity,keyvault,storage,postgres,servicebus,eventgrid,container-app,observability,edge}` — all 10 repo-local, each with its own `versions.tf`, **no cross-repo imports, no submodules, no symlinks** |
+| Terraform validation | `infra/validate.sh` (fmt · init `-backend=false` · validate · module reachability · 30 plan-invariant self-tests · secret scan) |
+| Invariant checker | `infra/terraform/tests/check_plan_invariants.py` — plan-JSON, 7 rule families incl. `pg.secure-transport` and `sb.queue-safety` |
+| Terraform remote state | **NOT_CONFIGURED** — `backend.tf` intentionally empty, fail-closed. No state store exists. |
+| Terraform apply / import | **NOT DONE** — no Azure resource created, changed or deleted by any IaC work |
 | Terraform environments | `infra/terraform/environments/{dev,validation,prod}/terraform.tfvars` |
 | Terraform plan gate | `infra/terraform/tests/check_plan_invariants.py` (reads **plan JSON**) + 26 negative controls |
 | Terraform CI | `.github/workflows/terraform-validate.yml` (static job + OIDC transient-plan job) |

@@ -99,6 +99,24 @@ def base_plan() -> dict[str, Any]:
                     "public_network_access_enabled": False,
                 },
             ),
+            # Added with the Bicep-invariant port. Without a queue in the base
+            # plan the new rules would have nothing to inspect and the negative
+            # controls below could not prove they bite.
+            _rc(
+                "azurerm_servicebus_queue.telemetry",
+                "azurerm_servicebus_queue",
+                {
+                    "name": "factory-telemetry-inbox",
+                    "requires_duplicate_detection": True,
+                    "dead_lettering_on_message_expiration": True,
+                    "max_delivery_count": 10,
+                },
+            ),
+            _rc(
+                "azurerm_postgresql_flexible_server_configuration.require_secure_transport",
+                "azurerm_postgresql_flexible_server_configuration",
+                {"name": "require_secure_transport", "value": "ON"},
+            ),
             _rc("azurerm_eventgrid_topic.this", "azurerm_eventgrid_topic", {"name": "eg"}),
             _rc("azurerm_eventgrid_event_subscription.s", "azurerm_eventgrid_event_subscription", {"name": "sub"}),
             _rc("azurerm_private_endpoint.blob", "azurerm_private_endpoint", {"name": "pe-blob"}),
@@ -371,6 +389,49 @@ def test_unreadable_container_template_fails_closed() -> None:
     p = base_plan()
     find(p, "azurerm_container_app.this")["change"]["after"]["template"] = "not-a-dict"
     expect_failure(p, "app.hardened")
+# --------------------------------------------------------------------------- #
+# Bicep invariants #6/#7/#8, ported after the Bicep stack was deleted.
+# Each mutates ONE property and asserts the checker fails FOR THAT REASON.
+# --------------------------------------------------------------------------- #
+def test_servicebus_queue_duplicate_detection_bites() -> None:
+    p = base_plan()
+    find(p, "azurerm_servicebus_queue.telemetry")["change"]["after"][
+        "requires_duplicate_detection"
+    ] = False
+    expect_failure(p, "sb.queue-safety")
+
+
+def test_servicebus_queue_dead_lettering_bites() -> None:
+    p = base_plan()
+    find(p, "azurerm_servicebus_queue.telemetry")["change"]["after"][
+        "dead_lettering_on_message_expiration"
+    ] = False
+    expect_failure(p, "sb.queue-safety")
+
+
+def test_postgres_secure_transport_bites() -> None:
+    """The regression the port introduced: this was OFF by omission."""
+    p = base_plan()
+    find(
+        p, "azurerm_postgresql_flexible_server_configuration.require_secure_transport"
+    )["change"]["after"]["value"] = "OFF"
+    expect_failure(p, "pg.secure-transport")
+
+
+def test_postgres_secure_transport_absent_bites() -> None:
+    """Deleting the configuration resource entirely must also fail.
+
+    A rule that only fires when the resource is present but wrongly configured
+    would pass a plan that simply removed it — the exact failure mode that let
+    this control go missing in the first place.
+    """
+    p = base_plan()
+    p["resource_changes"] = [
+        c
+        for c in p["resource_changes"]
+        if c["type"] != "azurerm_postgresql_flexible_server_configuration"
+    ]
+    expect_failure(p, "presence")
 
 
 def main() -> int:
