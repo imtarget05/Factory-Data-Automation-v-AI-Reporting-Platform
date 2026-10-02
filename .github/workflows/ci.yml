@@ -34,14 +34,15 @@ jobs:
   test:
     name: Unit Tests & Coverage
     runs-on: ubuntu-latest
-    # A REAL PostgreSQL 16 service -- not a mock, not SQLite.
+
+    # W2-2 migrations must be proven against a REAL PostgreSQL. SQLite has no
+    # transactional DDL and different index/constraint semantics, and the first
+    # defect this service container exists to catch was a DuplicateTable that
+    # only appears when a rename carries an index forward on a real server.
     #
-    # tests/wave2/test_migrations_real_pg.py REFUSES TO COLLECT when
-    # FACTORY_TEST_PG_ADMIN_URL is absent, by design: a migration chain executed
-    # against SQLite proves nothing about a PostgreSQL migration chain, and a
-    # skipped test is indistinguishable from a passing one. So "no database" has
-    # to mean RED. Providing the service below is what makes it mean "the
-    # service was misconfigured" instead of "we quietly stopped checking".
+    # The migration suite EXITS rather than skips when this is missing, so
+    # without the service below CI fails loudly instead of reporting green with
+    # zero migration observations.
     services:
       postgres:
         image: postgres:16-alpine
@@ -51,21 +52,18 @@ jobs:
           POSTGRES_DB: factory
         ports:
           - 5432:5432
-        # pg_isready with a retry loop: the job must not start collecting
-        # migrations before the server accepts connections, or the suite fails
-        # for a startup race that has nothing to do with the code under test.
         options: >-
-          --health-cmd "pg_isready -U factory -d factory"
-          --health-interval 5s
+          --health-cmd "pg_isready -U factory"
+          --health-interval 10s
           --health-timeout 5s
-          --health-retries 20
+          --health-retries 10
+
     env:
-      # 127.0.0.1 rather than the service hostname: these tests create and drop
-      # disposable databases, and the suite is written to run from the host.
-      FACTORY_TEST_PG_ADMIN_URL: postgresql+psycopg2://factory:factory@127.0.0.1:5432/postgres
+      FACTORY_TEST_PG_ADMIN_URL: postgresql+psycopg2://factory:factory@localhost:5432/factory
 
     steps:
       - uses: actions/checkout@v4
+
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
@@ -75,6 +73,50 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt pytest pytest-cov
+
+      # alembic is the migration framework (W2-2). Pinned exactly, because the
+      # migration chain is executed rather than only parsed, so a minor
+      # version can change what `upgrade head` does.
+      - name: Install the migration framework
+        run: pip install "alembic==1.20.0"
+
+      # The observation contract, in CI: prove the server is PostgreSQL 16 and
+      # is reachable BEFORE any migration test runs. A green job that never
+      # contacted a database is precisely the failure mode being prevented.
+      #
+      # PLACEMENT IS LOAD-BEARING. This step imports psycopg2, so it MUST sit
+      # AFTER the dependency install. Placed right after checkout — the obvious
+      # spot, next to the service it verifies — it fails with
+      # "No module named 'psycopg2'", which says nothing about the database
+      # while looking exactly like a database problem. That mistake was made
+      # once already; the reason is recorded so the step is not "tidied" back.
+      #
+      # Readiness itself is handled by the service `options` health-cmd above;
+      # this step is the assertion, not the wait.
+      - name: Prove the migration database is real and reachable
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import psycopg2
+
+          conn = psycopg2.connect(
+              host="localhost", port=5432, dbname="factory",
+              user="factory", password="factory",
+          )
+          cur = conn.cursor()
+          cur.execute(
+              "select version(), current_database(), "
+              "current_setting('server_version_num')"
+          )
+          version, database, num = cur.fetchone()
+          print("version   :", version)
+          print("database  :", database)
+          print("server_ver:", num)
+          assert int(num) >= 160000, (
+              f"W2-2 requires PostgreSQL 16+, got server_version_num={num}"
+          )
+          print("MIGRATION DB CONTRACT SATISFIED")
+          PY
 
       # data/raw/*.csv is gitignored, so a fresh CI checkout has no input data.
       # Generate it explicitly here so CI and a local clone run the exact same
@@ -104,6 +146,45 @@ jobs:
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --junitxml=test-results.xml
+
+      # WHY THIS STEP EXISTS. The migration suite exits rather than skips when
+      # there is no database, so a green run cannot silently mean "zero migration
+      # tests ran". But the converse also has to be impossible: a green job where
+      # the migration file silently failed to COLLECT would report success with
+      # nothing proven. So the count is read out of the JUnit XML that was just
+      # written and asserted against a floor.
+      #
+      # 10 is the current number of real-PostgreSQL proofs (M1 x3, M2 B1-B5 x4,
+      # M3 x2, M4 x2). A drop below it means collection broke, and a silent
+      # collection break is exactly how "migrations verified" becomes a claim
+      # nobody checked.
+      - name: Assert the migration proofs actually executed
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          tree = ET.parse("test-results.xml")
+          executed = 0
+          failed = 0
+          for case in tree.iter("testcase"):
+              name = case.get("classname") or ""
+              if "test_migrations_real_pg" in name:
+                  executed += 1
+                  if any(child.tag in {"failure", "error"} for child in case):
+                      failed += 1
+
+          print(f"migration proofs executed: {executed} (failures: {failed})")
+          if executed < 10:
+              print(
+                  f"FAIL: expected at least 10 real-PostgreSQL migration proofs, "
+                  f"saw {executed}. Collection is silently broken.",
+                  file=sys.stderr,
+              )
+              raise SystemExit(1)
+          print("MIGRATION PROOF COUNT OK")
+          PY
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
