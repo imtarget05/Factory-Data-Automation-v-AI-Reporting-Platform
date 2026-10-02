@@ -144,12 +144,58 @@ def _container_app_rules(v: dict[str, Any]) -> list[str]:
 
 
 
+def _servicebus_queue_rules(v: dict[str, Any]) -> list[str]:
+    """Duplicate detection and dead-lettering, ported from the Bicep invariants.
+
+    These two properties were set correctly in Terraform but were NOT checked by
+    this file before, so nothing would have failed if a later edit dropped them.
+    The Bicep stack asserted both on the compiled template
+    (check_invariants.py, invariants #7 and #8); with the Bicep deleted that
+    assertion had no successor until now.
+
+    `requires_duplicate_detection` matters because telemetry is at-least-once:
+    without it a redelivery is indistinguishable from new data and double-counts
+    downstream. `dead_lettering_on_message_expiration` matters because a message
+    that outlives its TTL must land somewhere reviewable instead of vanishing.
+    """
+    fails = []
+    if v.get("requires_duplicate_detection") is not True:
+        fails.append(
+            f"requires_duplicate_detection={v.get('requires_duplicate_detection')!r}, required True"
+        )
+    if v.get("dead_lettering_on_message_expiration") is not True:
+        fails.append(
+            "dead_lettering_on_message_expiration="
+            f"{v.get('dead_lettering_on_message_expiration')!r}, required True"
+        )
+    return fails
+
+
+def _pg_configuration_rules(v: dict[str, Any]) -> list[str]:
+    """`require_secure_transport` must be ON — invariant #6, restored.
+
+    This is the one the Terraform port DROPPED: the Bicep module enforced the
+    server parameter and the port declared no
+    `azurerm_postgresql_flexible_server_configuration` at all. Being inside a
+    private subnet does not substitute for it, because a compromised workload in
+    the VNet can still open a plaintext connection.
+    """
+    fails = []
+    if str(v.get("value", "")).upper() != "ON":
+        fails.append(
+            f"require_secure_transport value={v.get('value')!r}, required 'ON'"
+        )
+    return fails
+
+
 # (resource type, rule id, what the rule protects, predicate)
 RULES: list[tuple[str, str, str, Any]] = [
     ("azurerm_storage_account", "storage.tls", "storage must require TLS 1.2 and deny public blob access", _storage_rules),
     ("azurerm_key_vault", "kv.rbac", "key vault must use RBAC with purge protection", _keyvault_rules),
     ("azurerm_servicebus_namespace", "sb.tls", "service bus must require TLS 1.2", _servicebus_rules),
+    ("azurerm_servicebus_queue", "sb.queue-safety", "queue must detect duplicates and dead-letter expired messages", _servicebus_queue_rules),
     ("azurerm_postgresql_flexible_server", "pg.durability", "postgres must be zonal with >= 7 days of backup", _postgres_rules),
+    ("azurerm_postgresql_flexible_server_configuration", "pg.secure-transport", "postgres must refuse non-TLS connections", _pg_configuration_rules),
     ("azurerm_container_app", "app.hardened", "container app must be digest-pinned, probed, and secret-referenced", _container_app_rules),
 ]
 
@@ -163,7 +209,13 @@ REQUIRED_BY_ENVIRONMENT: dict[str, list[str]] = {
         "azurerm_key_vault",
         "azurerm_storage_account",
         "azurerm_postgresql_flexible_server",
+        # Added when Bicep invariant #6 was restored. Declaring the RESOURCE
+        # present is separate from checking its VALUE: without this, a plan that
+        # simply dropped `require_secure_transport` entirely would pass, which is
+        # precisely how the control went missing in the port.
+        "azurerm_postgresql_flexible_server_configuration",
         "azurerm_servicebus_namespace",
+        "azurerm_servicebus_queue",
         "azurerm_eventgrid_topic",
         "azurerm_eventgrid_event_subscription",
         "azurerm_private_endpoint",
@@ -176,14 +228,18 @@ REQUIRED_BY_ENVIRONMENT: dict[str, list[str]] = {
         "azurerm_key_vault",
         "azurerm_storage_account",
         "azurerm_postgresql_flexible_server",
+        "azurerm_postgresql_flexible_server_configuration",
         "azurerm_servicebus_namespace",
+        "azurerm_servicebus_queue",
         "azurerm_container_app",
     ],
     "dev": [
         "azurerm_key_vault",
         "azurerm_storage_account",
         "azurerm_postgresql_flexible_server",
+        "azurerm_postgresql_flexible_server_configuration",
         "azurerm_servicebus_namespace",
+        "azurerm_servicebus_queue",
         "azurerm_container_app",
     ],
 }

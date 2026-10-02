@@ -28,6 +28,23 @@ resource "azurerm_postgresql_flexible_server" "this" {
 
   tags = var.tags
 }
+# RESTORED, NOT INHERITED. The deleted Bicep PostgreSQL module enforced
+# `require_secure_transport = ON` through a server parameter, and
+# check_invariants.py asserted it on the compiled ARM template. The Terraform
+# port declared no server configuration at all, so the control silently stopped
+# existing — nothing caught it, because the parity tooling compared
+# DECLARATIONS, not semantics. See
+# docs/evidence/terraform-migration/final-bicep-parity.md invariant #6.
+#
+# Why it matters rather than being cosmetic: with `require_secure_transport` off,
+# a client that cannot speak TLS can still connect, which is exactly the path a
+# network boundary is supposed to close. "The server is in a private subnet"
+# does not fix that for a compromised workload inside the VNet.
+resource "azurerm_postgresql_flexible_server_configuration" "require_secure_transport" {
+  name      = "require_secure_transport"
+  server_id = azurerm_postgresql_flexible_server.this.id
+  value     = "ON"
+}
 
 # Private endpoint for the PostgreSQL data plane. Lives here so it cannot
 # outlive the server.
